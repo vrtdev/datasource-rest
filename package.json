@@ -1,16 +1,19 @@
 {
-  "name": "@apollo/datasource-rest",
+  "name": "@vrtdev/datasource-rest",
   "description": "REST DataSource for Apollo Server v4",
   "version": "6.2.2",
   "author": "Apollo <packages@apollographql.com>",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/apollographql/datasource-rest"
+    "url": "https://github.com/vrtdev/datasource-rest"
   },
-  "homepage": "https://github.com/apollographql/datasource-rest#readme",
+  "homepage": "https://github.com/vrtdev/datasource-rest#readme",
   "bugs": {
-    "url": "https://github.com/apollographql/datasource-rest/issues"
+    "url": "https://github.com/vrtdev/datasource-rest/issues"
+  },
+  "publishConfig": {
+    "registry": "https://nexus.core.a51.be/repository/npm/"
   },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -21,6 +24,7 @@
     "build": "tsc --build tsconfig.build.json",
     "clean": "git clean -dfqX",
     "prepack": "npm run build",
+    "prepublishOnly": "npm run build",
     "prettier-check": "prettier --check .",
     "prettier-fix": "prettier --write .",
     "spell-check": "cspell lint '**' '.changeset/**' --no-progress || (echo 'Add any real words to cspell-dict.txt.'; exit 1)",
