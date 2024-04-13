@@ -30,7 +30,30 @@ interface SneakyCachePolicy extends CachePolicy {
 interface ResponseWithCacheWritePromise {
   response: FetcherResponse;
   cacheWritePromise?: Promise<void>;
+  metrics: Metrics;
 }
+
+export interface Metrics {
+  // True if the response came from the cache.
+  fromCache: boolean;
+  // The number of seconds after which the response might not be usable anymore.
+  // To know for sure if a response from cache is usable, the cache policy evaluation should still be executed.
+  // The reason for this is that request headers also influence the outcome of this evaluation.
+  timeToLive?: number;
+  // The number of seconds that the response is stored, and that `fromCache` could be true.
+  // If this period is larger than 'timeToLive', it means that either the response could still be revalidated,
+  // or that stale responses are supported and allowed by the HTTP cache semantics.
+  cacheTimeToLive?: number;
+  // The cache key used for the key/value store.
+  cacheKey?: string;
+  // True if a revalidation request was done.
+  revalidated: boolean;
+  // How long the response has been cached (in any layer).
+  // This is calculated from the response headers, so it could be the result of any layer of caching.
+  age?: number;
+}
+
+const CACHE_PREFIX = 'httpcache:';
 
 export class HTTPCache<CO extends CacheOptions = CacheOptions> {
   private keyValueCache: KeyValueCache<string, CO>;
@@ -42,7 +65,7 @@ export class HTTPCache<CO extends CacheOptions = CacheOptions> {
   ) {
     this.keyValueCache = new PrefixingKeyValueCache(
       keyValueCache,
-      'httpcache:',
+      CACHE_PREFIX,
     );
     this.httpFetch = httpFetch;
   }
@@ -66,13 +89,18 @@ export class HTTPCache<CO extends CacheOptions = CacheOptions> {
     requestOpts.method = requestOpts.method ?? 'GET';
     const cacheKey = cache?.cacheKey ?? urlString;
 
+    const metrics: Metrics = { fromCache: false, revalidated: false };
+
     // Bypass the cache altogether for HEAD requests. Caching them might be fine
     // to do, but for now this is just a pragmatic choice for timeliness without
     // fully understanding the interplay between GET and HEAD requests (i.e.
     // refreshing headers with HEAD requests, responding to HEADs with cached
     // and valid GETs, etc.)
     if (requestOpts.method === 'HEAD') {
-      return { response: await this.httpFetch(urlString, requestOpts) };
+      return {
+        response: await this.httpFetch(urlString, requestOpts),
+        metrics,
+      };
     }
 
     const entry = await this.keyValueCache.get(cacheKey);
@@ -93,6 +121,7 @@ export class HTTPCache<CO extends CacheOptions = CacheOptions> {
         requestOpts,
         policy,
         cacheKey,
+        metrics,
         cache?.cacheOptions,
       );
     }
@@ -117,6 +146,8 @@ export class HTTPCache<CO extends CacheOptions = CacheOptions> {
       // `ttl` returned from `cacheOptionsFor`) and we're within that TTL, or
       // the cache entry was not created with an explicit TTL override and the
       // header-based cache policy says we can safely use the cached response.
+      metrics.fromCache = true;
+      metrics.age = policy.age();
       const headers = policy.responseHeaders();
       return {
         response: new NodeFetchResponse(body, {
@@ -124,6 +155,7 @@ export class HTTPCache<CO extends CacheOptions = CacheOptions> {
           status: policy._status,
           headers: cachePolicyHeadersToNodeFetchHeadersInit(headers),
         }),
+        metrics,
       };
     } else {
       // We aren't sure that we're allowed to use the cached response, so we are
@@ -158,6 +190,10 @@ export class HTTPCache<CO extends CacheOptions = CacheOptions> {
         policyResponseFrom(revalidationResponse),
       ) as unknown as { policy: SneakyCachePolicy; modified: boolean };
 
+      metrics.fromCache = !modified;
+      metrics.age = revalidatedPolicy.age();
+      metrics.revalidated = true;
+
       return this.storeResponseAndReturnClone(
         urlString,
         new NodeFetchResponse(
@@ -173,6 +209,7 @@ export class HTTPCache<CO extends CacheOptions = CacheOptions> {
         requestOpts,
         revalidatedPolicy,
         cacheKey,
+        metrics,
         cache?.cacheOptions,
       );
     }
@@ -184,6 +221,7 @@ export class HTTPCache<CO extends CacheOptions = CacheOptions> {
     request: RequestOptions<CO>,
     policy: SneakyCachePolicy,
     cacheKey: string,
+    metrics: Omit<Metrics, 'timeToLive'>,
     cacheOptions?:
       | CO
       | ((
@@ -204,14 +242,20 @@ export class HTTPCache<CO extends CacheOptions = CacheOptions> {
       // Without an override, we only cache GET requests and respect standard HTTP cache semantics
       !(request.method === 'GET' && policy.storable())
     ) {
-      return { response };
+      return { response, metrics };
     }
 
     let ttl =
       ttlOverride === undefined
         ? Math.round(policy.timeToLive() / 1000)
         : ttlOverride;
-    if (ttl <= 0) return { response };
+    if (ttl <= 0) return { response, metrics };
+
+    const metricsWhenStored: Metrics = {
+      ...metrics,
+      timeToLive: ttl, // After this line the ttl value can change. I.e. it gets the meaning of 'storeTimeToLive'.
+      cacheKey: `${CACHE_PREFIX}${cacheKey}`,
+    };
 
     // If a response can be revalidated, we don't want to remove it from the
     // cache right after it expires. (See the comment above the call to
@@ -220,6 +264,9 @@ export class HTTPCache<CO extends CacheOptions = CacheOptions> {
     if (canBeRevalidated(response)) {
       ttl *= 2;
     }
+
+    // register the ttl that is used for storing the response.
+    metricsWhenStored.cacheTimeToLive = ttl;
 
     // Clone the response and return it. In the background, read the original
     // response and write it to the cache. The caller is responsible for
@@ -247,6 +294,7 @@ export class HTTPCache<CO extends CacheOptions = CacheOptions> {
         ttlOverride,
         cacheKey,
       }),
+      metrics: metricsWhenStored,
     };
   }
 
