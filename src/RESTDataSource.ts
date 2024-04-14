@@ -131,6 +131,17 @@ export interface CacheOptions {
    * cached.
    */
   ttl?: number;
+  /**
+   * When set to true, the cache metrics will still contain exactly the same values.
+   * However, no response bodies will be cached. Only in the case of responses that
+   * can be revalidated a cache entry will be created, but with an empty body.
+   * This also means that whenever the cache metrics have 'fromCache' set to 'true',
+   * the response body will be empty.
+   * This setting allows a caller to perform custom caching of parsed and/validated
+   * objects, while reusing the cache policy evaluation strategy, but without the
+   * memory overhead of caching unnecessary bytes.
+   */
+  onlyEvaluatePolicy?: boolean;
 }
 
 const NODE_ENV = process.env.NODE_ENV;

@@ -265,11 +265,12 @@ export class HTTPCache<CO extends CacheOptions = CacheOptions> {
     ttlOverride: number | undefined;
     cacheKey: string;
   }): Promise<void> {
-    const body = await response.text();
+    // Even if the body is not put into the entry, it should still be read from the response.
+    let body = await response.text();
     const entry = JSON.stringify({
       policy: policy.toObject(),
       ttlOverride,
-      body,
+      body: cacheOptions?.onlyEvaluatePolicy ? '' : body,
     });
 
     // Set the value into the cache, and forward all the set cache option into the setter function
