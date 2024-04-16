@@ -473,10 +473,13 @@ export abstract class RESTDataSource<CO extends CacheOptions = CacheOptions> {
     return usp;
   }
 
-  public async fetch<TResult>(
+  public async getOutgoingRequest(
     path: string,
     incomingRequest: DataSourceRequest<CO> = {},
-  ): Promise<DataSourceFetchResult<TResult>> {
+  ): Promise<{
+    url: URL;
+    outgoingRequest: WithRequired<RequestOptions<CO>, 'method'>;
+  }> {
     const downcasedHeaders: Record<string, string> = {};
     if (incomingRequest.headers) {
       // map incoming headers to lower-case headers
@@ -524,6 +527,17 @@ export abstract class RESTDataSource<CO extends CacheOptions = CacheOptions> {
       'method'
     >;
 
+    return { url, outgoingRequest };
+  }
+
+  public async fetch<TResult>(
+    path: string,
+    incomingRequest: DataSourceRequest<CO> = {},
+  ): Promise<DataSourceFetchResult<TResult>> {
+    const { url, outgoingRequest } = await this.getOutgoingRequest(
+      path,
+      incomingRequest,
+    );
     const performRequest = async () => {
       return this.trace(url, outgoingRequest, async () => {
         const cacheKey = this.cacheKeyFor(url, outgoingRequest);
