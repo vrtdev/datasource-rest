@@ -34,6 +34,8 @@ interface ResponseWithCacheWritePromise {
 }
 
 export interface Metrics {
+  // The cache key used for the key/value store. It is provided, even if nothing got stored.
+  cacheKey: string;
   // True if the response came from the cache.
   fromCache: boolean;
   // The number of seconds after which the response might not be usable anymore.
@@ -44,8 +46,6 @@ export interface Metrics {
   // If this period is larger than 'timeToLive', it means that either the response could still be revalidated,
   // or that stale responses are supported and allowed by the HTTP cache semantics.
   cacheTimeToLive?: number;
-  // The cache key used for the key/value store.
-  cacheKey?: string;
   // True if a revalidation request was done.
   revalidated: boolean;
   // How long the response has been cached (in any layer).
@@ -89,7 +89,11 @@ export class HTTPCache<CO extends CacheOptions = CacheOptions> {
     requestOpts.method = requestOpts.method ?? 'GET';
     const cacheKey = cache?.cacheKey ?? urlString;
 
-    const metrics: Metrics = { fromCache: false, revalidated: false };
+    const metrics: Metrics = {
+      fromCache: false,
+      revalidated: false,
+      cacheKey: `${CACHE_PREFIX}${cacheKey}`,
+    };
 
     // Bypass the cache altogether for HEAD requests. Caching them might be fine
     // to do, but for now this is just a pragmatic choice for timeliness without
@@ -254,7 +258,6 @@ export class HTTPCache<CO extends CacheOptions = CacheOptions> {
     const metricsWhenStored: Metrics = {
       ...metrics,
       timeToLive: ttl, // After this line the ttl value can change. I.e. it gets the meaning of 'storeTimeToLive'.
-      cacheKey: `${CACHE_PREFIX}${cacheKey}`,
     };
 
     // If a response can be revalidated, we don't want to remove it from the
