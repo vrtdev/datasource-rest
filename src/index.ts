@@ -1,8 +1,6 @@
 export {
   RESTDataSource,
-  RequestOptions,
-  AugmentedRequest,
-  DataSourceFetchResult,
+  CacheOptions,
   DataSourceConfig,
   GetRequest,
   PatchRequest,
@@ -13,6 +11,7 @@ export {
   RequestWithoutBody,
   RequestWithBody,
   DataSourceRequest,
-  CacheOptions,
+  RequestOptions,
+  DataSourceResult,
   RequestDeduplicationPolicy,
 } from './RESTDataSource';

@@ -6,16 +6,20 @@ import type {
 import type { KeyValueCache } from '@apollo/utils.keyvaluecache';
 import type { Logger } from '@apollo/utils.logger';
 import type { WithRequired } from '@apollo/utils.withrequired';
-import { GraphQLError } from 'graphql';
 import type { Options as HttpCacheSemanticsOptions } from 'http-cache-semantics';
 import cloneDeep from 'lodash.clonedeep';
 import isPlainObject from 'lodash.isplainobject';
-import { HTTPCache } from './HTTPCache';
+import {
+  CACHE_ENTRY_STRING_MARSHALLER,
+  HTTPCache,
+  ResponseParser,
+} from './HTTPCache';
+import { GraphQLError } from 'graphql';
 
 export type ValueOrPromise<T> = T | Promise<T>;
 
 export type RequestOptions<CO extends CacheOptions = CacheOptions> =
-  FetcherRequestInit & {
+  WithRequired<FetcherRequestInit, 'method' | 'headers'> & {
     /**
      * URL search parameters can be provided either as a record object (in which
      * case keys with `undefined` values are ignored) or as an URLSearchParams
@@ -24,7 +28,7 @@ export type RequestOptions<CO extends CacheOptions = CacheOptions> =
      * (The URLSearchParams object is globally available in Node, and provided to
      * TypeScript by @types/node.)
      */
-    params?: Record<string, string | undefined> | URLSearchParams;
+    params: URLSearchParams;
     /**
      * The default implementation of `cacheKeyFor` returns this value if it is
      * provided. This is used both as part of the request deduplication key and as
@@ -53,40 +57,45 @@ export type RequestOptions<CO extends CacheOptions = CacheOptions> =
     httpCacheSemanticsCachePolicyOptions?: HttpCacheSemanticsOptions;
   };
 
+export type DataSourceRequest<CO extends CacheOptions = CacheOptions> = Omit<
+  RequestOptions<CO>,
+  'method' | 'headers' | 'params' | 'body'
+> & {
+  method?: RequestOptions['method']; // Allow optional method
+  headers?: RequestOptions['headers']; // Allow optional headers
+  params?: RequestOptions['params'] | Record<string, string | undefined>; // Allow record as query params
+  body?: RequestOptions['body'] | object; // Allow object as body
+};
+
 export interface HeadRequest<CO extends CacheOptions = CacheOptions>
-  extends RequestOptions<CO> {
+  extends DataSourceRequest<CO> {
   method?: 'HEAD';
   body?: never;
 }
 
 export interface GetRequest<CO extends CacheOptions = CacheOptions>
-  extends RequestOptions<CO> {
+  extends DataSourceRequest<CO> {
   method?: 'GET';
   body?: never;
 }
 
-interface WithBody<CO extends CacheOptions = CacheOptions>
-  extends Omit<RequestOptions<CO>, 'body'> {
-  body?: FetcherRequestInit['body'] | object;
-}
-
 export interface PostRequest<CO extends CacheOptions = CacheOptions>
-  extends WithBody<CO> {
+  extends DataSourceRequest<CO> {
   method?: 'POST';
 }
 
 export interface PutRequest<CO extends CacheOptions = CacheOptions>
-  extends WithBody<CO> {
+  extends DataSourceRequest<CO> {
   method?: 'PUT';
 }
 
 export interface PatchRequest<CO extends CacheOptions = CacheOptions>
-  extends WithBody<CO> {
+  extends DataSourceRequest<CO> {
   method?: 'PATCH';
 }
 
 export interface DeleteRequest<CO extends CacheOptions = CacheOptions>
-  extends WithBody<CO> {
+  extends DataSourceRequest<CO> {
   method?: 'DELETE';
 }
 
@@ -99,25 +108,6 @@ export type RequestWithBody<CO extends CacheOptions = CacheOptions> =
   | PutRequest<CO>
   | PatchRequest<CO>
   | DeleteRequest<CO>;
-
-export type DataSourceRequest<CO extends CacheOptions = CacheOptions> =
-  | RequestWithoutBody<CO>
-  | RequestWithBody<CO>;
-
-// While tempting, this union can't be reduced / factored out to just
-// Omit<WithRequired<RequestWithBody | RequestWithBody, 'headers'>, 'params'> & { params: URLSearchParams }
-// TS loses its ability to discriminate against the method (and its consequential `body` type)
-/**
- * This type is for convenience w.r.t. the `willSendRequest` and `resolveURL`
- * hooks to ensure that headers and params are always present, even if they're
- * empty.
- */
-export type AugmentedRequest<CO extends CacheOptions = CacheOptions> = (
-  | Omit<WithRequired<RequestWithoutBody<CO>, 'headers'>, 'params'>
-  | Omit<WithRequired<RequestWithBody<CO>, 'headers'>, 'params'>
-) & {
-  params: URLSearchParams;
-};
 
 export interface CacheOptions {
   /**
@@ -150,9 +140,9 @@ export interface HTTPCacheResult {
   // This is primarily returned so that tests can be deterministic.
   cacheWritePromise: Promise<void> | undefined;
 }
-export interface DataSourceFetchResult<TResult> {
-  parsedBody: TResult;
-  response: FetcherResponse;
+
+export interface DataSourceResult<TResult> {
+  result: TResult;
   requestDeduplication: RequestDeduplicationResult;
   httpCache: HTTPCacheResult;
 }
@@ -193,20 +183,317 @@ export abstract class RESTDataSource<CO extends CacheOptions = CacheOptions> {
   logger: Logger;
 
   constructor(config?: DataSourceConfig) {
-    this.httpCache = new HTTPCache<CO>(config?.cache, config?.fetch);
+    this.httpCache = new HTTPCache<CO>(
+      config?.cache,
+      config?.fetch,
+      CACHE_ENTRY_STRING_MARSHALLER,
+    );
     this.logger = config?.logger ?? console;
   }
 
-  // By default, we use `cacheKey` from the request if provided, or the full
-  // request URL. You can override this to remove query parameters or compute a
-  // cache key in any way that makes sense. For example, you could use this to
-  // take header fields into account (the kinds of fields you expect to show up
-  // in Vary in the response). Although we do parse Vary in responses so that we
-  // won't return a cache entry whose Vary-ed header field doesn't match, new
-  // responses can overwrite old ones with different Vary-ed header fields if
-  // you don't take the header into account in the cache key.
-  protected cacheKeyFor(url: URL, request: RequestOptions<CO>): string {
-    return request.cacheKey ?? `${request.method ?? 'GET'} ${url}`;
+  protected async head<TResult = any>(
+    path: string,
+    request: HeadRequest<CO> = {},
+    responseParser?: ResponseParser<TResult>,
+  ): Promise<TResult> {
+    return (
+      await this.fetch<TResult>(
+        path,
+        {
+          method: 'HEAD',
+          ...request,
+        },
+        responseParser,
+      )
+    ).result;
+  }
+
+  protected async get<TResult = any>(
+    path: string,
+    request: GetRequest<CO> = {},
+    responseParser?: ResponseParser<TResult>,
+  ): Promise<TResult> {
+    return (
+      await this.fetch<TResult>(
+        path,
+        {
+          method: 'GET',
+          ...request,
+        },
+        responseParser,
+      )
+    ).result;
+  }
+
+  protected async post<TResult = any>(
+    path: string,
+    request: PostRequest<CO> = {},
+    responseParser?: ResponseParser<TResult>,
+  ): Promise<TResult> {
+    return (
+      await this.fetch<TResult>(
+        path,
+        {
+          method: 'POST',
+          ...request,
+        },
+        responseParser,
+      )
+    ).result;
+  }
+
+  protected async patch<TResult = any>(
+    path: string,
+    request: PatchRequest<CO> = {},
+    responseParser?: ResponseParser<TResult>,
+  ): Promise<TResult> {
+    return (
+      await this.fetch<TResult>(
+        path,
+        {
+          method: 'PATCH',
+          ...request,
+        },
+        responseParser,
+      )
+    ).result;
+  }
+
+  protected async put<TResult = any>(
+    path: string,
+    request: PutRequest<CO> = {},
+    responseParser?: ResponseParser<TResult>,
+  ): Promise<TResult> {
+    return (
+      await this.fetch<TResult>(
+        path,
+        {
+          method: 'PUT',
+          ...request,
+        },
+        responseParser,
+      )
+    ).result;
+  }
+
+  protected async delete<TResult = any>(
+    path: string,
+    request: DeleteRequest<CO> = {},
+    responseParser?: ResponseParser<TResult>,
+  ): Promise<TResult> {
+    return (
+      await this.fetch<TResult>(
+        path,
+        {
+          method: 'DELETE',
+          ...request,
+        },
+        responseParser,
+      )
+    ).result;
+  }
+
+  public async fetch<TResult>(
+    path: string,
+    dataSourceRequest: DataSourceRequest<CO> = {},
+    responseParser?: ResponseParser<TResult>,
+  ): Promise<DataSourceResult<TResult>> {
+    // Use the default response parser if none was provided.
+    if (!responseParser) {
+      responseParser = this.responseParser();
+    }
+
+    const requestOptions = await this.toRequestOptions(dataSourceRequest);
+
+    // A hook to manipulate the final fetch request and/or the url.
+    const url = await this.willSendRequest(path, requestOptions);
+
+    // Cache GET requests based on the calculated cache key
+    // Disabling the request cache does not disable the response cache
+    const policy = this.requestDeduplicationPolicyFor(url, requestOptions);
+    if (
+      policy.policy === 'deduplicate-during-request-lifetime' ||
+      policy.policy === 'deduplicate-until-invalidated'
+    ) {
+      const previousRequestPromise = this.deduplicationPromises.get(
+        policy.deduplicationKey,
+      );
+      if (previousRequestPromise)
+        return previousRequestPromise.then((result) =>
+          this.cloneDataSourceFetchResult(result, {
+            policy,
+            deduplicatedAgainstPreviousRequest: true,
+          }),
+        );
+
+      const thisRequestPromise = this.performRequest(
+        url,
+        requestOptions,
+        responseParser,
+      );
+      this.deduplicationPromises.set(
+        policy.deduplicationKey,
+        thisRequestPromise,
+      );
+      try {
+        // The request promise needs to be awaited here rather than just
+        // returned. This ensures that the request completes before it's removed
+        // from the cache. Additionally, the use of finally here guarantees the
+        // deduplication cache is cleared in the event of an error during the
+        // request.
+        //
+        // Note: we could try to get fancy and only clone if no de-duplication
+        // happened (and we're "deduplicate-during-request-lifetime") but we
+        // haven't quite bothered yet.
+        return this.cloneDataSourceFetchResult<TResult>(
+          await thisRequestPromise,
+          {
+            policy,
+            deduplicatedAgainstPreviousRequest: false,
+          },
+        );
+      } finally {
+        if (policy.policy === 'deduplicate-during-request-lifetime') {
+          this.deduplicationPromises.delete(policy.deduplicationKey);
+        }
+      }
+    } else {
+      for (const key of policy.invalidateDeduplicationKeys ?? []) {
+        this.deduplicationPromises.delete(key);
+      }
+      return {
+        ...(await this.performRequest(url, requestOptions, responseParser)),
+        requestDeduplication: {
+          policy,
+          deduplicatedAgainstPreviousRequest: false,
+        },
+      };
+    }
+  }
+
+  private async toRequestOptions(
+    dataSourceRequest: DataSourceRequest<CO> = {},
+  ): Promise<RequestOptions<CO>> {
+    const downcasedHeaders: Record<string, string> = {};
+    if (dataSourceRequest.headers) {
+      // map incoming headers to lower-case headers
+      Object.entries(dataSourceRequest.headers).forEach(([key, value]) => {
+        downcasedHeaders[key.toLowerCase()] = value;
+      });
+    }
+
+    let body;
+    // FIXME this feels weird and very limiting. What about all other possible serialisations..
+    if (this.shouldJSONSerializeBody(dataSourceRequest.body)) {
+      body = JSON.stringify(dataSourceRequest.body);
+      // If Content-Type header has not been previously set, set to application/json
+      if (!downcasedHeaders['content-type']) {
+        downcasedHeaders['content-type'] = 'application/json';
+      }
+    } else {
+      body = dataSourceRequest.body;
+    }
+
+    return {
+      ...dataSourceRequest,
+      // Default to GET in the case that `fetch` is called directly with no method
+      // provided. Our other request methods all provide one.
+      method: dataSourceRequest.method ? dataSourceRequest.method : 'GET',
+      headers: downcasedHeaders,
+      // guarantee params and headers objects before calling `willSendRequest` for convenience
+      params:
+        dataSourceRequest.params instanceof URLSearchParams
+          ? dataSourceRequest.params
+          : this.urlSearchParamsFromRecord(dataSourceRequest.params),
+      body,
+    };
+  }
+
+  protected shouldJSONSerializeBody(
+    body: RequestWithBody<CO>['body'],
+  ): body is object {
+    return !!(
+      // We accept arbitrary objects and arrays as body and serialize them as JSON.
+      (
+        Array.isArray(body) ||
+        isPlainObject(body) ||
+        // We serialize any objects that have a toJSON method (except Buffers or things that look like FormData)
+        (body &&
+          typeof body === 'object' &&
+          'toJSON' in body &&
+          typeof (body as any).toJSON === 'function' &&
+          !(body instanceof Buffer) &&
+          // XXX this is a bit of a hacky check for FormData-like objects (in
+          // case a FormData implementation has a toJSON method on it)
+          (body as any).constructor?.name !== 'FormData')
+      )
+    );
+  }
+
+  private urlSearchParamsFromRecord(
+    params: Record<string, string | undefined> | undefined,
+  ): URLSearchParams {
+    const usp = new URLSearchParams();
+    if (params) {
+      for (const [name, value] of Object.entries(params)) {
+        if (value !== undefined && value !== null) {
+          usp.set(name, value);
+        }
+      }
+    }
+    return usp;
+  }
+
+  protected willSendRequest(
+    path: string,
+    requestOptions: RequestOptions<CO>,
+  ): ValueOrPromise<URL> {
+    const url = new URL(path, this.baseURL);
+    // Append params to existing params in the path
+    for (const [name, value] of requestOptions.params) {
+      url.searchParams.append(name, value);
+    }
+    return url;
+  }
+
+  private async performRequest<TResult>(
+    url: URL,
+    requestOptions: RequestOptions<CO>,
+    responseParser: ResponseParser<TResult>,
+  ): Promise<Omit<DataSourceResult<TResult>, 'requestDeduplication'>> {
+    return this.trace(url, requestOptions, async () => {
+      const cacheKey = this.cacheKeyFor(url, requestOptions);
+      const cacheOptions = requestOptions.cacheOptions
+        ? requestOptions.cacheOptions
+        : this.cacheOptionsFor?.bind(this);
+      try {
+        const { result, cacheWritePromise } = await this.httpCache.fetch(
+          url,
+          requestOptions,
+          {
+            cacheKey,
+            cacheOptions,
+            httpCacheSemanticsCachePolicyOptions:
+              requestOptions.httpCacheSemanticsCachePolicyOptions,
+          },
+          responseParser,
+        );
+
+        if (cacheWritePromise) {
+          this.catchCacheWritePromiseErrors(cacheWritePromise);
+        }
+
+        return {
+          result,
+          httpCache: {
+            cacheWritePromise,
+          },
+        };
+      } catch (error) {
+        this.didEncounterError(error as Error, requestOptions, url);
+        throw error;
+      }
+    });
   }
 
   /**
@@ -256,16 +543,16 @@ export abstract class RESTDataSource<CO extends CacheOptions = CacheOptions> {
     }
   }
 
-  protected willSendRequest?(
-    path: string,
-    requestOpts: AugmentedRequest<CO>,
-  ): ValueOrPromise<void>;
-
-  protected resolveURL(
-    path: string,
-    _request: AugmentedRequest<CO>,
-  ): ValueOrPromise<URL> {
-    return new URL(path, this.baseURL);
+  // By default, we use `cacheKey` from the request if provided, or the full
+  // request URL. You can override this to remove query parameters or compute a
+  // cache key in any way that makes sense. For example, you could use this to
+  // take header fields into account (the kinds of fields you expect to show up
+  // in Vary in the response). Although we do parse Vary in responses so that we
+  // won't return a cache entry whose Vary-ed header field doesn't match, new
+  // responses can overwrite old ones with different Vary-ed header fields if
+  // you don't take the header into account in the cache key.
+  protected cacheKeyFor(url: URL, request: RequestOptions<CO>): string {
+    return request.cacheKey ?? `${request.method} ${url}`;
   }
 
   protected cacheOptionsFor?(
@@ -284,6 +571,27 @@ export abstract class RESTDataSource<CO extends CacheOptions = CacheOptions> {
     // breaking an existing use case where one calls
     // `super.didEncounterErrors(...)` This could be unimplemented / undefined
     // in a theoretical next major of this package.
+  }
+
+  protected responseParser<TResult>(
+    okResponseParser?: ResponseParser<TResult>,
+    nokResponseParser?: ResponseParser<TResult>,
+  ): ResponseParser<TResult> {
+    return async (response: FetcherResponse): Promise<TResult> => {
+      if (response.ok) {
+        if (okResponseParser) {
+          return okResponseParser(response);
+        } else {
+          return (await this.parseBody(response)) as TResult;
+        }
+      } else {
+        if (nokResponseParser) {
+          return nokResponseParser(response);
+        } else {
+          throw await this.errorFromResponse(response);
+        }
+      }
+    };
   }
 
   // Reads the body of the response and returns it in parsed form. If you want
@@ -312,67 +620,7 @@ export abstract class RESTDataSource<CO extends CacheOptions = CacheOptions> {
     }
   }
 
-  private cloneDataSourceFetchResult<TResult>(
-    dataSourceFetchResult: Omit<
-      DataSourceFetchResult<TResult>,
-      'requestDeduplication'
-    >,
-    requestDeduplicationResult: RequestDeduplicationResult,
-  ): DataSourceFetchResult<TResult> {
-    return {
-      ...dataSourceFetchResult,
-      requestDeduplication: requestDeduplicationResult,
-      parsedBody: this.cloneParsedBody(dataSourceFetchResult.parsedBody),
-    };
-  }
-
-  protected cloneParsedBody<TResult>(parsedBody: TResult) {
-    // consider using `structuredClone()` when we drop support for Node 16
-    return cloneDeep(parsedBody);
-  }
-
-  protected shouldJSONSerializeBody(
-    body: RequestWithBody<CO>['body'],
-  ): boolean {
-    return !!(
-      // We accept arbitrary objects and arrays as body and serialize them as JSON.
-      (
-        Array.isArray(body) ||
-        isPlainObject(body) ||
-        // We serialize any objects that have a toJSON method (except Buffers or things that look like FormData)
-        (body &&
-          typeof body === 'object' &&
-          'toJSON' in body &&
-          typeof (body as any).toJSON === 'function' &&
-          !(body instanceof Buffer) &&
-          // XXX this is a bit of a hacky check for FormData-like objects (in
-          // case a FormData implementation has a toJSON method on it)
-          (body as any).constructor?.name !== 'FormData')
-      )
-    );
-  }
-
-  protected async throwIfResponseIsError(options: {
-    url: URL;
-    request: RequestOptions<CO>;
-    response: FetcherResponse;
-    parsedBody: unknown;
-  }) {
-    if (options.response.ok) {
-      return;
-    }
-    throw await this.errorFromResponse(options);
-  }
-
-  protected async errorFromResponse({
-    response,
-    parsedBody,
-  }: {
-    url?: URL;
-    request?: RequestOptions<CO>;
-    response: FetcherResponse;
-    parsedBody: unknown;
-  }) {
+  protected async errorFromResponse(response: FetcherResponse) {
     const codeByStatus = new Map<number, string>([
       [401, 'UNAUTHENTICATED'],
       [403, 'FORBIDDEN'],
@@ -386,243 +634,29 @@ export abstract class RESTDataSource<CO extends CacheOptions = CacheOptions> {
           url: response.url,
           status: response.status,
           statusText: response.statusText,
-          body: parsedBody,
+          body: await this.parseBody(response),
         },
       },
     });
   }
 
-  protected async head(
-    path: string,
-    request?: HeadRequest<CO>,
-  ): Promise<FetcherResponse> {
-    return (await this.fetch(path, { method: 'HEAD', ...request })).response;
-  }
-
-  protected async get<TResult = any>(
-    path: string,
-    request?: GetRequest<CO>,
-  ): Promise<TResult> {
-    return (
-      await this.fetch<TResult>(path, {
-        method: 'GET',
-        ...request,
-      })
-    ).parsedBody;
-  }
-
-  protected async post<TResult = any>(
-    path: string,
-    request?: PostRequest<CO>,
-  ): Promise<TResult> {
-    return (
-      await this.fetch<TResult>(path, {
-        method: 'POST',
-        ...request,
-      })
-    ).parsedBody;
-  }
-
-  protected async patch<TResult = any>(
-    path: string,
-    request?: PatchRequest<CO>,
-  ): Promise<TResult> {
-    return (
-      await this.fetch<TResult>(path, {
-        method: 'PATCH',
-        ...request,
-      })
-    ).parsedBody;
-  }
-
-  protected async put<TResult = any>(
-    path: string,
-    request?: PutRequest<CO>,
-  ): Promise<TResult> {
-    return (
-      await this.fetch<TResult>(path, {
-        method: 'PUT',
-        ...request,
-      })
-    ).parsedBody;
-  }
-
-  protected async delete<TResult = any>(
-    path: string,
-    request?: DeleteRequest<CO>,
-  ): Promise<TResult> {
-    return (
-      await this.fetch<TResult>(path, {
-        method: 'DELETE',
-        ...request,
-      })
-    ).parsedBody;
-  }
-
-  private urlSearchParamsFromRecord(
-    params: Record<string, string | undefined> | undefined,
-  ): URLSearchParams {
-    const usp = new URLSearchParams();
-    if (params) {
-      for (const [name, value] of Object.entries(params)) {
-        if (value !== undefined && value !== null) {
-          usp.set(name, value);
-        }
-      }
-    }
-    return usp;
-  }
-
-  public async fetch<TResult>(
-    path: string,
-    incomingRequest: DataSourceRequest<CO> = {},
-  ): Promise<DataSourceFetchResult<TResult>> {
-    const downcasedHeaders: Record<string, string> = {};
-    if (incomingRequest.headers) {
-      // map incoming headers to lower-case headers
-      Object.entries(incomingRequest.headers).forEach(([key, value]) => {
-        downcasedHeaders[key.toLowerCase()] = value;
-      });
-    }
-
-    const augmentedRequest: AugmentedRequest<CO> = {
-      ...incomingRequest,
-      // guarantee params and headers objects before calling `willSendRequest` for convenience
-      params:
-        incomingRequest.params instanceof URLSearchParams
-          ? incomingRequest.params
-          : this.urlSearchParamsFromRecord(incomingRequest.params),
-      headers: downcasedHeaders,
+  private cloneDataSourceFetchResult<TResult>(
+    dataSourceFetchResult: Omit<
+      DataSourceResult<TResult>,
+      'requestDeduplication'
+    >,
+    requestDeduplicationResult: RequestDeduplicationResult,
+  ): DataSourceResult<TResult> {
+    return {
+      ...dataSourceFetchResult,
+      requestDeduplication: requestDeduplicationResult,
+      result: this.cloneParsedBody(dataSourceFetchResult.result),
     };
-    // Default to GET in the case that `fetch` is called directly with no method
-    // provided. Our other request methods all provide one.
-    if (!augmentedRequest.method) augmentedRequest.method = 'GET';
+  }
 
-    if (this.willSendRequest) {
-      await this.willSendRequest(path, augmentedRequest);
-    }
-
-    const url = await this.resolveURL(path, augmentedRequest);
-
-    // Append params to existing params in the path
-    for (const [name, value] of augmentedRequest.params as URLSearchParams) {
-      url.searchParams.append(name, value);
-    }
-
-    if (this.shouldJSONSerializeBody(augmentedRequest.body)) {
-      augmentedRequest.body = JSON.stringify(augmentedRequest.body);
-      // If Content-Type header has not been previously set, set to application/json
-      if (!augmentedRequest.headers['content-type']) {
-        augmentedRequest.headers['content-type'] = 'application/json';
-      }
-    }
-
-    // At this point we know the `body` is a `string`, `Buffer`, or `undefined`
-    // (not possibly an `object`).
-    const outgoingRequest = augmentedRequest as WithRequired<
-      RequestOptions<CO>,
-      'method'
-    >;
-
-    const performRequest = async () => {
-      return this.trace(url, outgoingRequest, async () => {
-        const cacheKey = this.cacheKeyFor(url, outgoingRequest);
-        const cacheOptions = outgoingRequest.cacheOptions
-          ? outgoingRequest.cacheOptions
-          : this.cacheOptionsFor?.bind(this);
-        try {
-          const { response, cacheWritePromise } = await this.httpCache.fetch(
-            url,
-            outgoingRequest,
-            {
-              cacheKey,
-              cacheOptions,
-              httpCacheSemanticsCachePolicyOptions:
-                outgoingRequest.httpCacheSemanticsCachePolicyOptions,
-            },
-          );
-
-          if (cacheWritePromise) {
-            this.catchCacheWritePromiseErrors(cacheWritePromise);
-          }
-
-          const parsedBody = await this.parseBody(response);
-
-          await this.throwIfResponseIsError({
-            url,
-            request: outgoingRequest,
-            response,
-            parsedBody,
-          });
-
-          return {
-            parsedBody: parsedBody as any as TResult,
-            response,
-            httpCache: {
-              cacheWritePromise,
-            },
-          };
-        } catch (error) {
-          this.didEncounterError(error as Error, outgoingRequest, url);
-          throw error;
-        }
-      });
-    };
-
-    // Cache GET requests based on the calculated cache key
-    // Disabling the request cache does not disable the response cache
-    const policy = this.requestDeduplicationPolicyFor(url, outgoingRequest);
-    if (
-      policy.policy === 'deduplicate-during-request-lifetime' ||
-      policy.policy === 'deduplicate-until-invalidated'
-    ) {
-      const previousRequestPromise = this.deduplicationPromises.get(
-        policy.deduplicationKey,
-      );
-      if (previousRequestPromise)
-        return previousRequestPromise.then((result) =>
-          this.cloneDataSourceFetchResult(result, {
-            policy,
-            deduplicatedAgainstPreviousRequest: true,
-          }),
-        );
-
-      const thisRequestPromise = performRequest();
-      this.deduplicationPromises.set(
-        policy.deduplicationKey,
-        thisRequestPromise,
-      );
-      try {
-        // The request promise needs to be awaited here rather than just
-        // returned. This ensures that the request completes before it's removed
-        // from the cache. Additionally, the use of finally here guarantees the
-        // deduplication cache is cleared in the event of an error during the
-        // request.
-        //
-        // Note: we could try to get fancy and only clone if no de-duplication
-        // happened (and we're "deduplicate-during-request-lifetime") but we
-        // haven't quite bothered yet.
-        return this.cloneDataSourceFetchResult(await thisRequestPromise, {
-          policy,
-          deduplicatedAgainstPreviousRequest: false,
-        });
-      } finally {
-        if (policy.policy === 'deduplicate-during-request-lifetime') {
-          this.deduplicationPromises.delete(policy.deduplicationKey);
-        }
-      }
-    } else {
-      for (const key of policy.invalidateDeduplicationKeys ?? []) {
-        this.deduplicationPromises.delete(key);
-      }
-      return {
-        ...(await performRequest()),
-        requestDeduplication: {
-          policy,
-          deduplicatedAgainstPreviousRequest: false,
-        },
-      };
-    }
+  protected cloneParsedBody<TResult>(parsedBody: TResult) {
+    // consider using `structuredClone()` when we drop support for Node 16
+    return cloneDeep(parsedBody);
   }
 
   // Override this method to handle these errors in a different way.
