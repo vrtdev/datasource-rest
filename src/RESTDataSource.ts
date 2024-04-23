@@ -466,33 +466,28 @@ export abstract class RESTDataSource<CO extends CacheOptions = CacheOptions> {
       const cacheOptions = requestOptions.cacheOptions
         ? requestOptions.cacheOptions
         : this.cacheOptionsFor?.bind(this);
-      try {
-        const { result, cacheWritePromise } = await this.httpCache.fetch(
-          url,
-          requestOptions,
-          {
-            cacheKey,
-            cacheOptions,
-            httpCacheSemanticsCachePolicyOptions:
-              requestOptions.httpCacheSemanticsCachePolicyOptions,
-          },
-          responseParser,
-        );
+      const { result, cacheWritePromise } = await this.httpCache.fetch(
+        url,
+        requestOptions,
+        {
+          cacheKey,
+          cacheOptions,
+          httpCacheSemanticsCachePolicyOptions:
+            requestOptions.httpCacheSemanticsCachePolicyOptions,
+        },
+        responseParser,
+      );
 
-        if (cacheWritePromise) {
-          this.catchCacheWritePromiseErrors(cacheWritePromise);
-        }
-
-        return {
-          result,
-          httpCache: {
-            cacheWritePromise,
-          },
-        };
-      } catch (error) {
-        this.didEncounterError(error as Error, requestOptions, url);
-        throw error;
+      if (cacheWritePromise) {
+        this.catchCacheWritePromiseErrors(cacheWritePromise);
       }
+
+      return {
+        result,
+        httpCache: {
+          cacheWritePromise,
+        },
+      };
     });
   }
 
@@ -560,18 +555,6 @@ export abstract class RESTDataSource<CO extends CacheOptions = CacheOptions> {
     response: FetcherResponse,
     request: FetcherRequestInit,
   ): ValueOrPromise<CO | undefined>;
-
-  protected didEncounterError(
-    _error: Error,
-    _request: RequestOptions<CO>,
-    // TODO(v7): this shouldn't be optional in a future major version
-    _url?: URL,
-  ) {
-    // left as a no-op instead of an unimplemented optional method to avoid
-    // breaking an existing use case where one calls
-    // `super.didEncounterErrors(...)` This could be unimplemented / undefined
-    // in a theoretical next major of this package.
-  }
 
   protected responseParser<TResult>(
     okResponseParser?: ResponseParser<TResult>,

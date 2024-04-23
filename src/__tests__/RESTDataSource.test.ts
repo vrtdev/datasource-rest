@@ -597,7 +597,7 @@ describe('RESTDataSource', () => {
           return this.head('foo', {}, async (response) => {
             return {
               status: response.status,
-            }
+            };
           });
         }
       })();
@@ -1551,16 +1551,12 @@ describe('RESTDataSource', () => {
           override baseURL = 'https://api.example.com';
 
           getFoo() {
-            return this.get(
-              'foo',
-              {},
-              async (response) => {
-                if (response.ok) {
-                  throw await this.errorFromResponse(response);
-                }
-              });
+            return this.get('foo', {}, async (response) => {
+              if (response.ok) {
+                throw await this.errorFromResponse(response);
+              }
+            });
           }
-
         })();
 
         nock(apiUrl).get('/foo').reply(200, 'Invalid token');
@@ -1929,14 +1925,11 @@ describe('RESTDataSource', () => {
             override baseURL = 'https://api.example.com';
 
             postFoo() {
-              return this.fetch(
-                'foo',
-                { method: 'POST' },
-                async (response) => {
-                  return {
-                    headers: response.headers,
-                  }
-                });
+              return this.fetch('foo', { method: 'POST' }, async (response) => {
+                return {
+                  headers: response.headers,
+                };
+              });
             }
           })();
 
@@ -1980,7 +1973,8 @@ describe('RESTDataSource', () => {
                   return {
                     headers: response.headers,
                   };
-                });
+                },
+              );
             }
           })();
 
@@ -2117,153 +2111,6 @@ describe('RESTDataSource', () => {
           nock(apiUrl).post('/foo/1', { name: 'bar' }).reply(200);
           await dataSource.updateFoo(1, { name: 'bar' });
           expect(calls).toBe(1);
-        });
-      });
-
-      describe('didEncounterError', () => {
-        it('is called with the error', async () => {
-          let encounteredError: Error | null = null;
-          const dataSource = new (class extends RESTDataSource {
-            override baseURL = 'https://api.example.com';
-
-            getFoo() {
-              return this.get('foo');
-            }
-
-            override didEncounterError(error: Error) {
-              encounteredError = error;
-            }
-          })();
-
-          nock(apiUrl)
-            .get('/foo')
-            .reply(
-              500,
-              {
-                errors: [{ message: 'Houston, we have a problem.' }],
-              },
-              { 'content-type': 'application/json' },
-            );
-
-          const result = dataSource.getFoo();
-          await expect(result).rejects.toThrow(GraphQLError);
-          await expect(result).rejects.toMatchObject({
-            extensions: {
-              response: {
-                status: 500,
-                body: {
-                  errors: [
-                    {
-                      message: 'Houston, we have a problem.',
-                    },
-                  ],
-                },
-              },
-            },
-          });
-          expect(encounteredError).toMatchObject({
-            message: '500: Internal Server Error',
-          });
-        });
-
-        it('can modify the error', async () => {
-          const dataSource = new (class extends RESTDataSource {
-            override baseURL = 'https://api.example.com';
-
-            getFoo() {
-              return this.get('foo');
-            }
-
-            override didEncounterError(error: Error) {
-              error.message = 'Hello from didEncounterError';
-            }
-          })();
-
-          nock(apiUrl)
-            .get('/foo')
-            .reply(
-              500,
-              {
-                errors: [{ message: 'Houston, we have a problem.' }],
-              },
-              { 'content-type': 'application/json' },
-            );
-
-          const result = dataSource.getFoo();
-
-          await expect(result).rejects.toThrow(GraphQLError);
-          await expect(result).rejects.toMatchObject({
-            message: 'Hello from didEncounterError',
-          });
-        });
-
-        it('can throw its own error', async () => {
-          const dataSource = new (class extends RESTDataSource {
-            override baseURL = 'https://api.example.com';
-
-            getFoo() {
-              return this.get('foo');
-            }
-
-            override didEncounterError() {
-              throw new Error('I replaced the error entirely');
-            }
-          })();
-
-          nock(apiUrl)
-            .get('/foo')
-            .reply(
-              500,
-              {
-                errors: [{ message: 'Houston, we have a problem.' }],
-              },
-              { 'content-type': 'application/json' },
-            );
-
-          const result = dataSource.getFoo();
-
-          await expect(result).rejects.not.toThrow(GraphQLError);
-          await expect(result).rejects.toThrow(Error);
-          await expect(result).rejects.toMatchObject({
-            message: 'I replaced the error entirely',
-          });
-        });
-
-        it('is called with the url', async () => {
-          let urlFromDidEncounterError: URL | undefined = undefined;
-          const dataSource = new (class extends RESTDataSource {
-            override baseURL = 'https://api.example.com';
-
-            getFoo() {
-              return this.get('foo');
-            }
-
-            override didEncounterError(
-              _: Error,
-              __: RequestOptions,
-              url?: URL,
-            ) {
-              urlFromDidEncounterError = url;
-            }
-          })();
-
-          nock(apiUrl)
-            .get('/foo')
-            .reply(
-              500,
-              {
-                errors: [{ message: 'Houston, we have a problem.' }],
-              },
-              { 'content-type': 'application/json' },
-            );
-
-          try {
-            await dataSource.getFoo();
-          } catch {}
-
-          expect((urlFromDidEncounterError as any).toString()).toMatch(
-            'https://api.example.com/foo',
-          );
         });
       });
     });
