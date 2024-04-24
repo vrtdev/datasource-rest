@@ -72,11 +72,14 @@ describe('HTTPCache', () => {
   };
 
   async function responseParser(response: FetcherResponse) {
-    const headers: {[key: string]: string} = {};
+    const headers: { [key: string]: string } = {};
     for (const [name, values] of response.headers) {
-      headers[name] =  values.length === 1 ? values[0] : values;
+      headers[name] = values.length === 1 ? values[0] : values;
     }
-    const json = response.ok && headers['content-type'] === 'application/json' ? await response.json() : '';
+    const json =
+      response.ok && headers['content-type'] === 'application/json'
+        ? await response.json()
+        : '';
     return {
       url: response.url,
       headers,
@@ -88,7 +91,12 @@ describe('HTTPCache', () => {
   it('fetches a response from the origin when not cached', async () => {
     mockGetAdaLovelace();
 
-    const { result, cacheWritePromise } = await httpCache.fetch(adaUrl, requestOpts, cache, responseParser);
+    const { result, cacheWritePromise } = await httpCache.fetch(
+      adaUrl,
+      requestOpts,
+      cache,
+      responseParser,
+    );
     expect(cacheWritePromise).toBeUndefined();
 
     expect(await result.json).toEqual({ name: 'Ada Lovelace' });
@@ -97,14 +105,23 @@ describe('HTTPCache', () => {
   it('returns a cached response when not expired', async () => {
     mockGetAdaLovelace({ 'cache-control': 'max-age=30' });
 
-    const { result: firstResult, cacheWritePromise } =
-      await httpCache.fetch(adaUrl, requestOpts, cache, responseParser);
+    const { result: firstResult, cacheWritePromise } = await httpCache.fetch(
+      adaUrl,
+      requestOpts,
+      cache,
+      responseParser,
+    );
     expect(firstResult.url).toBe(adaUrl.toString());
 
     await cacheWritePromise;
     jest.advanceTimersByTime(10000);
 
-    const { result } = await httpCache.fetch(adaUrl, requestOpts, cache, responseParser);
+    const { result } = await httpCache.fetch(
+      adaUrl,
+      requestOpts,
+      cache,
+      responseParser,
+    );
 
     expect(result.url).toBe(adaUrl.toString());
     expect(await result.json).toEqual({ name: 'Ada Lovelace' });
@@ -115,7 +132,12 @@ describe('HTTPCache', () => {
   it('fetches a fresh response from the origin when expired', async () => {
     mockGetAdaLovelace({ 'cache-control': 'max-age=30' });
 
-    const { cacheWritePromise } = await httpCache.fetch(adaUrl, requestOpts, cache, responseParser);
+    const { cacheWritePromise } = await httpCache.fetch(
+      adaUrl,
+      requestOpts,
+      cache,
+      responseParser,
+    );
 
     await cacheWritePromise;
     jest.advanceTimersByTime(30000);
@@ -123,7 +145,10 @@ describe('HTTPCache', () => {
     mockGetAlanTuring({ 'cache-control': 'max-age=30' });
 
     const { result } = await httpCache.fetch(
-      new URL('https://api.example.com/people/1'), requestOpts, cache, responseParser,
+      new URL('https://api.example.com/people/1'),
+      requestOpts,
+      cache,
+      responseParser,
     );
 
     expect(await result.json).toEqual({ name: 'Alan Turing' });
@@ -149,13 +174,18 @@ describe('HTTPCache', () => {
         adaUrl,
         requestOpts,
         cache,
-        responseParser
+        responseParser,
       );
 
       await cacheWritePromise;
       jest.advanceTimersByTime(10000);
 
-      const { result } = await httpCache.fetch(adaUrl, requestOpts, cache, responseParser);
+      const { result } = await httpCache.fetch(
+        adaUrl,
+        requestOpts,
+        cache,
+        responseParser,
+      );
 
       expect(await result.json).toEqual({ name: 'Ada Lovelace' });
       // FIXME check through cache metrics
@@ -177,7 +207,7 @@ describe('HTTPCache', () => {
             ttl: 30,
           },
         },
-        responseParser
+        responseParser,
       );
 
       await cacheWritePromise;
@@ -189,7 +219,10 @@ describe('HTTPCache', () => {
       });
 
       const { result } = await httpCache.fetch(
-        new URL('https://api.example.com/people/1'), requestOpts, cache, responseParser
+        new URL('https://api.example.com/people/1'),
+        requestOpts,
+        cache,
+        responseParser,
       );
 
       expect(await result.json).toEqual({ name: 'Alan Turing' });
@@ -220,7 +253,10 @@ describe('HTTPCache', () => {
       });
 
       const { result } = await httpCache.fetch(
-        new URL('https://api.example.com/people/1'), requestOpts, cache, responseParser
+        new URL('https://api.example.com/people/1'),
+        requestOpts,
+        cache,
+        responseParser,
       );
 
       expect(await result.json).toEqual({ name: 'Alan Turing' });
@@ -238,7 +274,12 @@ describe('HTTPCache', () => {
         },
       };
 
-      const { cacheWritePromise } = await httpCache.fetch(adaUrl, requestOpts, cache, responseParser,);
+      const { cacheWritePromise } = await httpCache.fetch(
+        adaUrl,
+        requestOpts,
+        cache,
+        responseParser,
+      );
 
       expect(cacheWritePromise).toBeUndefined();
       expect(store.isEmpty()).toBe(true);
@@ -267,7 +308,12 @@ describe('HTTPCache', () => {
       await cacheWritePromise;
       jest.advanceTimersByTime(10000);
 
-      const { result } = await httpCache.fetch(adaUrl, requestOpts, cache, responseParser);
+      const { result } = await httpCache.fetch(
+        adaUrl,
+        requestOpts,
+        cache,
+        responseParser,
+      );
 
       expect(await result.json).toEqual({ name: 'Ada Lovelace' });
       // FIXME check through cache metrics
@@ -299,7 +345,12 @@ describe('HTTPCache', () => {
       await cacheWritePromise;
       jest.advanceTimersByTime(10000);
 
-      const { result } = await httpCache.fetch(adaUrl, requestOpts, cache, responseParser);
+      const { result } = await httpCache.fetch(
+        adaUrl,
+        requestOpts,
+        cache,
+        responseParser,
+      );
 
       expect(await result.json).toEqual({ name: 'Ada Lovelace' });
       // FIXME check through cache metrics
@@ -362,7 +413,7 @@ describe('HTTPCache', () => {
         method: 'POST',
       },
       { cacheKey: adaUrl.toString() },
-      responseParser
+      responseParser,
     );
 
     expect(cacheWritePromise).toBeUndefined();
@@ -372,7 +423,12 @@ describe('HTTPCache', () => {
   it('does not store a response with a non-success status code', async () => {
     mockInternalServerError({ 'cache-control': 'max-age=30' });
 
-    const { cacheWritePromise } = await httpCache.fetch(adaUrl, requestOpts, cache, responseParser);
+    const { cacheWritePromise } = await httpCache.fetch(
+      adaUrl,
+      requestOpts,
+      cache,
+      responseParser,
+    );
 
     expect(cacheWritePromise).toBeUndefined();
     expect(store.isEmpty()).toBe(true);
@@ -381,7 +437,12 @@ describe('HTTPCache', () => {
   it('does not store a response without cache-control header', async () => {
     mockGetAdaLovelace();
 
-    const { cacheWritePromise } = await httpCache.fetch(adaUrl, requestOpts, cache, responseParser);
+    const { cacheWritePromise } = await httpCache.fetch(
+      adaUrl,
+      requestOpts,
+      cache,
+      responseParser,
+    );
 
     expect(cacheWritePromise).toBeUndefined();
     expect(store.isEmpty()).toBe(true);
@@ -390,7 +451,12 @@ describe('HTTPCache', () => {
   it('does not store a private response', async () => {
     mockGetAdaLovelace({ 'cache-control': 'private, max-age: 60' });
 
-    const { cacheWritePromise } = await httpCache.fetch(adaUrl, requestOpts, cache, responseParser);
+    const { cacheWritePromise } = await httpCache.fetch(
+      adaUrl,
+      requestOpts,
+      cache,
+      responseParser,
+    );
 
     expect(cacheWritePromise).toBeUndefined();
     expect(store.isEmpty()).toBe(true);
@@ -402,16 +468,26 @@ describe('HTTPCache', () => {
       vary: 'Accept-Language',
     });
 
-    const { cacheWritePromise } = await httpCache.fetch(adaUrl, {
-      ...requestOpts,
-      headers: { 'accept-language': 'en' },
-    }, cache, responseParser);
+    const { cacheWritePromise } = await httpCache.fetch(
+      adaUrl,
+      {
+        ...requestOpts,
+        headers: { 'accept-language': 'en' },
+      },
+      cache,
+      responseParser,
+    );
     await cacheWritePromise;
 
-    const { result } = await httpCache.fetch(adaUrl, {
-      ...requestOpts,
-      headers: { 'accept-language': 'en' },
-    }, cache, responseParser);
+    const { result } = await httpCache.fetch(
+      adaUrl,
+      {
+        ...requestOpts,
+        headers: { 'accept-language': 'en' },
+      },
+      cache,
+      responseParser,
+    );
 
     expect(await result.json).toEqual({ name: 'Ada Lovelace' });
   });
@@ -422,10 +498,15 @@ describe('HTTPCache', () => {
       vary: 'Accept-Language',
     });
 
-    const { cacheWritePromise } = await httpCache.fetch(adaUrl, {
-      ...requestOpts,
-      headers: { 'accept-language': 'en' },
-    }, cache, responseParser);
+    const { cacheWritePromise } = await httpCache.fetch(
+      adaUrl,
+      {
+        ...requestOpts,
+        headers: { 'accept-language': 'en' },
+      },
+      cache,
+      responseParser,
+    );
     await cacheWritePromise;
 
     mockGetAlanTuring({ 'cache-control': 'max-age=30' });
@@ -435,7 +516,9 @@ describe('HTTPCache', () => {
       {
         ...requestOpts,
         headers: { 'accept-language': 'fr' },
-      }, cache, responseParser
+      },
+      cache,
+      responseParser,
     );
 
     expect(await result.json).toEqual({ name: 'Alan Turing' });
@@ -446,7 +529,12 @@ describe('HTTPCache', () => {
 
     const storeSet = jest.spyOn(store, 'set');
 
-    const { cacheWritePromise } = await httpCache.fetch(adaUrl, requestOpts, cache, responseParser);
+    const { cacheWritePromise } = await httpCache.fetch(
+      adaUrl,
+      requestOpts,
+      cache,
+      responseParser,
+    );
     await cacheWritePromise;
 
     expect(storeSet).toHaveBeenCalledWith(
@@ -462,7 +550,12 @@ describe('HTTPCache', () => {
 
     const storeSet = jest.spyOn(store, 'set');
 
-    const { cacheWritePromise } = await httpCache.fetch(adaUrl, requestOpts, cache, responseParser);
+    const { cacheWritePromise } = await httpCache.fetch(
+      adaUrl,
+      requestOpts,
+      cache,
+      responseParser,
+    );
     await cacheWritePromise;
 
     expect(storeSet).toHaveBeenCalledWith(
@@ -479,7 +572,11 @@ describe('HTTPCache', () => {
 
     const storeSet = jest.spyOn(store, 'set');
 
-    const customHttpCache = new HTTPCache<CustomCacheOptions>(store, fetch, CACHE_ENTRY_STRING_MARSHALLER);
+    const customHttpCache = new HTTPCache<CustomCacheOptions>(
+      store,
+      fetch,
+      CACHE_ENTRY_STRING_MARSHALLER,
+    );
     const { cacheWritePromise } = await customHttpCache.fetch(
       adaUrl,
       requestOpts,
@@ -509,8 +606,12 @@ describe('HTTPCache', () => {
       etag: 'foo',
     });
 
-    const { result: result0, cacheWritePromise: cwp1 } =
-      await httpCache.fetch(adaUrl, requestOpts, cache, responseParser);
+    const { result: result0, cacheWritePromise: cwp1 } = await httpCache.fetch(
+      adaUrl,
+      requestOpts,
+      cache,
+      responseParser,
+    );
     expect(result0.status).toEqual(200);
     expect(await result0.json).toEqual({ name: 'Ada Lovelace' });
     // FIXME check through cache metrics
@@ -519,8 +620,12 @@ describe('HTTPCache', () => {
     await cwp1;
     jest.advanceTimersByTime(10000);
 
-    const { result: result1, cacheWritePromise: cwp2 } =
-      await httpCache.fetch(adaUrl, requestOpts, cache, responseParser);
+    const { result: result1, cacheWritePromise: cwp2 } = await httpCache.fetch(
+      adaUrl,
+      requestOpts,
+      cache,
+      responseParser,
+    );
     expect(cwp2).toBeUndefined();
     expect(result1.status).toEqual(200);
     expect(await result1.json).toEqual({ name: 'Ada Lovelace' });
@@ -537,7 +642,12 @@ describe('HTTPCache', () => {
         etag: 'foo',
       });
 
-    const { result, cacheWritePromise: cwp3 } = await httpCache.fetch(adaUrl, requestOpts, cache, responseParser);
+    const { result, cacheWritePromise: cwp3 } = await httpCache.fetch(
+      adaUrl,
+      requestOpts,
+      cache,
+      responseParser,
+    );
     expect(result.status).toEqual(200);
     expect(await result.json).toEqual({ name: 'Ada Lovelace' });
     // FIXME check through cache metrics
@@ -546,8 +656,12 @@ describe('HTTPCache', () => {
     await cwp3;
     jest.advanceTimersByTime(10000);
 
-    const { result: result2, cacheWritePromise: cwp4 } =
-      await httpCache.fetch(adaUrl, requestOpts, cache, responseParser);
+    const { result: result2, cacheWritePromise: cwp4 } = await httpCache.fetch(
+      adaUrl,
+      requestOpts,
+      cache,
+      responseParser,
+    );
 
     expect(cwp4).toBeUndefined();
     expect(result2.status).toEqual(200);
@@ -562,8 +676,12 @@ describe('HTTPCache', () => {
       'last-modified': 'Wed, 21 Oct 2015 07:28:00 GMT',
     });
 
-    const { result: result0, cacheWritePromise: cwp1 } =
-      await httpCache.fetch(adaUrl, requestOpts, cache, responseParser);
+    const { result: result0, cacheWritePromise: cwp1 } = await httpCache.fetch(
+      adaUrl,
+      requestOpts,
+      cache,
+      responseParser,
+    );
     expect(result0.status).toEqual(200);
     expect(await result0.json).toEqual({ name: 'Ada Lovelace' });
     // FIXME check through cache metrics
@@ -572,8 +690,12 @@ describe('HTTPCache', () => {
     await cwp1;
     jest.advanceTimersByTime(10000);
 
-    const { result: result1, cacheWritePromise: cwp2 } =
-      await httpCache.fetch(adaUrl, requestOpts, cache, responseParser);
+    const { result: result1, cacheWritePromise: cwp2 } = await httpCache.fetch(
+      adaUrl,
+      requestOpts,
+      cache,
+      responseParser,
+    );
     expect(cwp2).toBeUndefined();
     expect(result1.status).toEqual(200);
     expect(await result1.json).toEqual({ name: 'Ada Lovelace' });
@@ -590,7 +712,12 @@ describe('HTTPCache', () => {
         'last-modified': 'Wed, 21 Oct 2015 07:28:00 GMT',
       });
 
-    const { result, cacheWritePromise: cwp3 } = await httpCache.fetch(adaUrl, requestOpts, cache, responseParser);
+    const { result, cacheWritePromise: cwp3 } = await httpCache.fetch(
+      adaUrl,
+      requestOpts,
+      cache,
+      responseParser,
+    );
 
     expect(result.status).toEqual(200);
     expect(await result.json).toEqual({ name: 'Ada Lovelace' });
@@ -600,8 +727,12 @@ describe('HTTPCache', () => {
     await cwp3;
     jest.advanceTimersByTime(10000);
 
-    const { result: result2, cacheWritePromise: cwp4 } =
-      await httpCache.fetch(adaUrl, requestOpts, cache, responseParser);
+    const { result: result2, cacheWritePromise: cwp4 } = await httpCache.fetch(
+      adaUrl,
+      requestOpts,
+      cache,
+      responseParser,
+    );
 
     expect(cwp4).toBeUndefined();
     expect(result2.status).toEqual(200);
@@ -617,7 +748,12 @@ describe('HTTPCache', () => {
     });
 
     {
-      const { cacheWritePromise } = await httpCache.fetch(adaUrl, requestOpts, cache, responseParser);
+      const { cacheWritePromise } = await httpCache.fetch(
+        adaUrl,
+        requestOpts,
+        cache,
+        responseParser,
+      );
       await cacheWritePromise;
     }
 
@@ -630,7 +766,10 @@ describe('HTTPCache', () => {
 
     {
       const { result, cacheWritePromise } = await httpCache.fetch(
-        new URL('https://api.example.com/people/1'), requestOpts, cache, responseParser
+        new URL('https://api.example.com/people/1'),
+        requestOpts,
+        cache,
+        responseParser,
       );
 
       expect(cacheWritePromise).toBeDefined();
@@ -644,7 +783,10 @@ describe('HTTPCache', () => {
 
     {
       const { result: result2, cacheWritePromise } = await httpCache.fetch(
-        new URL('https://api.example.com/people/1'), requestOpts, cache, responseParser
+        new URL('https://api.example.com/people/1'),
+        requestOpts,
+        cache,
+        responseParser,
       );
 
       expect(cacheWritePromise).toBeUndefined();
@@ -659,9 +801,18 @@ describe('HTTPCache', () => {
     mockGetAdaLovelace();
 
     const customFetch = jest.fn(fetch);
-    const customHttpCache = new HTTPCache(store, customFetch, CACHE_ENTRY_STRING_MARSHALLER);
+    const customHttpCache = new HTTPCache(
+      store,
+      customFetch,
+      CACHE_ENTRY_STRING_MARSHALLER,
+    );
 
-    const { result, cacheWritePromise } = await customHttpCache.fetch(adaUrl, requestOpts, cache, responseParser);
+    const { result, cacheWritePromise } = await customHttpCache.fetch(
+      adaUrl,
+      requestOpts,
+      cache,
+      responseParser,
+    );
 
     expect(cacheWritePromise).toBeUndefined();
     expect(await result.json).toEqual({ name: 'Ada Lovelace' });
@@ -673,10 +824,15 @@ describe('HTTPCache', () => {
       nock(apiUrl).head(adaPath).times(2).reply(200);
 
       for (const _ of [1, 2]) {
-        const { cacheWritePromise } = await httpCache.fetch(adaUrl, {
-          ...requestOpts,
-          method: 'HEAD',
-        }, cache, responseParser);
+        const { cacheWritePromise } = await httpCache.fetch(
+          adaUrl,
+          {
+            ...requestOpts,
+            method: 'HEAD',
+          },
+          cache,
+          responseParser,
+        );
         expect(cacheWritePromise).toBeUndefined();
       }
     });
@@ -694,7 +850,7 @@ describe('HTTPCache', () => {
           },
           {
             cacheKey: adaUrl.toString(),
-            cacheOptions: { ttl: 30000 }
+            cacheOptions: { ttl: 30000 },
           },
           responseParser,
         );
@@ -709,7 +865,8 @@ describe('HTTPCache', () => {
             method: 'HEAD',
           },
           cache,
-          responseParser);
+          responseParser,
+        );
         expect(cacheWritePromise).toBeUndefined();
       }
     });

@@ -32,16 +32,16 @@ export interface FetchResult<TResult, TError> {
 export type ResponseParser<TResult, TError> = (
   response: FetcherResponse,
 ) => Promise<{
-  result?: TResult,
-  error?: TError,
+  result?: TResult;
+  error?: TError;
 }>;
 
 export type CacheEntry = {
   policy: SneakyCachePolicy;
   ttlOverride?: number;
   parsedResponse: {
-    result?: any,
-    error?: any,
+    result?: any;
+    error?: any;
   };
 };
 
