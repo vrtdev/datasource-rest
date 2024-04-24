@@ -23,19 +23,26 @@ interface SneakyCachePolicy extends CachePolicy {
   age(): number;
 }
 
-export interface FetchResult<TResult> {
-  result: TResult;
+export interface FetchResult<TResult, TError> {
+  result?: TResult;
+  error?: TError;
   cacheWritePromise?: Promise<void>;
 }
 
-export type ResponseParser<TResult> = (
+export type ResponseParser<TResult, TError> = (
   response: FetcherResponse,
-) => Promise<TResult>;
+) => Promise<{
+  result?: TResult,
+  error?: TError,
+}>;
 
 export type CacheEntry = {
   policy: SneakyCachePolicy;
   ttlOverride?: number;
-  result: any;
+  parsedResponse: {
+    result?: any,
+    error?: any,
+  };
 };
 
 export type CacheEntryMarshaller<CacheValue extends {} = string> = {
@@ -92,7 +99,7 @@ export class HTTPCache<
     this.cacheEntryMarshaller = cacheEntryMarshaller;
   }
 
-  async fetch<TResult = any>(
+  async fetch<TResult = any, TError = any>(
     url: URL,
     requestOpts: RequestOptions<CO>,
     cache: {
@@ -106,8 +113,8 @@ export class HTTPCache<
           ) => ValueOrPromise<CO | undefined>);
       httpCacheSemanticsCachePolicyOptions?: HttpCacheSemanticsOptions;
     },
-    responseParser: ResponseParser<TResult>,
-  ): Promise<FetchResult<TResult>> {
+    responseParser: ResponseParser<TResult, TError>,
+  ): Promise<FetchResult<TResult, TError>> {
     const urlString = url.toString();
     const cacheKey = cache.cacheKey;
 
@@ -117,10 +124,10 @@ export class HTTPCache<
     // refreshing headers with HEAD requests, responding to HEADs with cached
     // and valid GETs, etc.)
     if (requestOpts.method === 'HEAD') {
+      const response = await this.httpFetch(urlString, requestOpts);
+      const parsedResponse = await responseParser(response);
       return {
-        result: await responseParser(
-          await this.httpFetch(urlString, requestOpts),
-        ),
+        ...parsedResponse,
       };
     }
 
@@ -130,7 +137,7 @@ export class HTTPCache<
       // we're allowed.
       const response = await this.httpFetch(urlString, requestOpts);
 
-      const result = await responseParser(response);
+      const parsedResponse = await responseParser(response);
 
       const policy = new CachePolicy(
         policyRequestFrom(urlString, requestOpts),
@@ -147,7 +154,7 @@ export class HTTPCache<
 
       return this.storeResponseAndReturnClone(
         cacheKey,
-        result,
+        parsedResponse,
         requestOpts,
         policy,
         cacheOptions,
@@ -155,7 +162,7 @@ export class HTTPCache<
       );
     }
 
-    const { policy, ttlOverride, result } =
+    const { policy, ttlOverride, parsedResponse } =
       this.cacheEntryMarshaller.deserialize(entry);
 
     // Remove url from the policy, because otherwise it would never match a
@@ -175,7 +182,8 @@ export class HTTPCache<
       // the cache entry was not created with an explicit TTL override and the
       // header-based cache policy says we can safely use the cached response.
       return {
-        result,
+        result: parsedResponse.result,
+        error: parsedResponse.error,
       };
     } else {
       // We aren't sure that we're allowed to use the cached response, so we are
@@ -223,7 +231,7 @@ export class HTTPCache<
 
       return this.storeResponseAndReturnClone(
         cacheKey,
-        modified ? await responseParser(revalidationResponse) : result,
+        modified ? await responseParser(revalidationResponse) : parsedResponse,
         requestOpts,
         revalidatedPolicy,
         cacheOptions,
@@ -232,14 +240,14 @@ export class HTTPCache<
     }
   }
 
-  private async storeResponseAndReturnClone<TResult>(
+  private async storeResponseAndReturnClone<TResult, TError>(
     cacheKey: string,
-    result: TResult,
+    parsedResponse: Awaited<ReturnType<ResponseParser<TResult, TError>>>,
     request: RequestOptions<CO>,
     policy: SneakyCachePolicy,
     cacheOptions?: CO,
     ttlFactor?: number,
-  ): Promise<FetchResult<TResult>> {
+  ): Promise<FetchResult<TResult, TError>> {
     let ttlOverride = cacheOptions?.ttl;
 
     if (
@@ -248,14 +256,14 @@ export class HTTPCache<
       // Without an override, we only cache GET requests and respect standard HTTP cache semantics
       !(request.method === 'GET' && policy.storable())
     ) {
-      return { result };
+      return { ...parsedResponse };
     }
 
     let ttl =
       ttlOverride === undefined
         ? Math.round(policy.timeToLive() / 1000)
         : ttlOverride;
-    if (ttl <= 0) return { result };
+    if (ttl <= 0) return { ...parsedResponse };
 
     // If a response can be revalidated, we don't want to remove it from the
     // cache right after it expires. (See the comment above the call to
@@ -268,11 +276,11 @@ export class HTTPCache<
     const cacheEntry: CacheEntry = {
       policy: policy,
       ttlOverride,
-      result,
+      parsedResponse,
     };
 
     return {
-      result,
+      ...parsedResponse,
       cacheWritePromise: this.writeToCache({
         cacheKey,
         cacheEntry,

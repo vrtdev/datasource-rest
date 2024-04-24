@@ -10,11 +10,13 @@ import type { Options as HttpCacheSemanticsOptions } from 'http-cache-semantics'
 import cloneDeep from 'lodash.clonedeep';
 import isPlainObject from 'lodash.isplainobject';
 import {
-  CACHE_ENTRY_STRING_MARSHALLER,
+  CACHE_ENTRY_STRING_MARSHALLER, CacheEntryMarshaller,
   HTTPCache,
   ResponseParser,
 } from './HTTPCache';
 import { GraphQLError } from 'graphql';
+
+export {CACHE_ENTRY_STRING_MARSHALLER, CACHE_ENTRY_NOOP_MARSHALLER} from './HTTPCache';
 
 export type ValueOrPromise<T> = T | Promise<T>;
 
@@ -129,6 +131,7 @@ export interface DataSourceConfig {
   cache?: KeyValueCache;
   fetch?: Fetcher;
   logger?: Logger;
+  cacheEntryMarshaller?: CacheEntryMarshaller<any>,
 }
 
 export interface RequestDeduplicationResult {
@@ -141,8 +144,9 @@ export interface HTTPCacheResult {
   cacheWritePromise: Promise<void> | undefined;
 }
 
-export interface DataSourceResult<TResult> {
-  result: TResult;
+export interface DataSourceResult<TResult, TError> {
+  result?: TResult;
+  error?: TError;
   requestDeduplication: RequestDeduplicationResult;
   httpCache: HTTPCacheResult;
 }
@@ -186,7 +190,7 @@ export abstract class RESTDataSource<CO extends CacheOptions = CacheOptions> {
     this.httpCache = new HTTPCache<CO>(
       config?.cache,
       config?.fetch,
-      CACHE_ENTRY_STRING_MARSHALLER,
+      config?.cacheEntryMarshaller ? config.cacheEntryMarshaller : CACHE_ENTRY_STRING_MARSHALLER,
     );
     this.logger = config?.logger ?? console;
   }
@@ -194,10 +198,10 @@ export abstract class RESTDataSource<CO extends CacheOptions = CacheOptions> {
   protected async head<TResult = any>(
     path: string,
     request: HeadRequest<CO> = {},
-    responseParser?: ResponseParser<TResult>,
+    responseParser?: ResponseParser<TResult, any>,
   ): Promise<TResult> {
     return (
-      await this.fetch<TResult>(
+      await this.fetchThrowsError<TResult>(
         path,
         {
           method: 'HEAD',
@@ -205,16 +209,16 @@ export abstract class RESTDataSource<CO extends CacheOptions = CacheOptions> {
         },
         responseParser,
       )
-    ).result;
+    );
   }
 
   protected async get<TResult = any>(
     path: string,
     request: GetRequest<CO> = {},
-    responseParser?: ResponseParser<TResult>,
+    responseParser?: ResponseParser<TResult, any>,
   ): Promise<TResult> {
     return (
-      await this.fetch<TResult>(
+      await this.fetchThrowsError<TResult>(
         path,
         {
           method: 'GET',
@@ -222,16 +226,16 @@ export abstract class RESTDataSource<CO extends CacheOptions = CacheOptions> {
         },
         responseParser,
       )
-    ).result;
+    );
   }
 
   protected async post<TResult = any>(
     path: string,
     request: PostRequest<CO> = {},
-    responseParser?: ResponseParser<TResult>,
+    responseParser?: ResponseParser<TResult, any>,
   ): Promise<TResult> {
     return (
-      await this.fetch<TResult>(
+      await this.fetchThrowsError<TResult>(
         path,
         {
           method: 'POST',
@@ -239,16 +243,16 @@ export abstract class RESTDataSource<CO extends CacheOptions = CacheOptions> {
         },
         responseParser,
       )
-    ).result;
+    );
   }
 
   protected async patch<TResult = any>(
     path: string,
     request: PatchRequest<CO> = {},
-    responseParser?: ResponseParser<TResult>,
+    responseParser?: ResponseParser<TResult, any>,
   ): Promise<TResult> {
     return (
-      await this.fetch<TResult>(
+      await this.fetchThrowsError<TResult>(
         path,
         {
           method: 'PATCH',
@@ -256,16 +260,16 @@ export abstract class RESTDataSource<CO extends CacheOptions = CacheOptions> {
         },
         responseParser,
       )
-    ).result;
+    );
   }
 
   protected async put<TResult = any>(
     path: string,
     request: PutRequest<CO> = {},
-    responseParser?: ResponseParser<TResult>,
+    responseParser?: ResponseParser<TResult, any>,
   ): Promise<TResult> {
     return (
-      await this.fetch<TResult>(
+      await this.fetchThrowsError<TResult>(
         path,
         {
           method: 'PUT',
@@ -273,16 +277,16 @@ export abstract class RESTDataSource<CO extends CacheOptions = CacheOptions> {
         },
         responseParser,
       )
-    ).result;
+    );
   }
 
   protected async delete<TResult = any>(
     path: string,
     request: DeleteRequest<CO> = {},
-    responseParser?: ResponseParser<TResult>,
+    responseParser?: ResponseParser<TResult, any>,
   ): Promise<TResult> {
     return (
-      await this.fetch<TResult>(
+      await this.fetchThrowsError<TResult>(
         path,
         {
           method: 'DELETE',
@@ -290,17 +294,39 @@ export abstract class RESTDataSource<CO extends CacheOptions = CacheOptions> {
         },
         responseParser,
       )
-    ).result;
+    );
   }
 
-  public async fetch<TResult>(
+  private async fetchThrowsError<TResult = any>(
     path: string,
     dataSourceRequest: DataSourceRequest<CO> = {},
-    responseParser?: ResponseParser<TResult>,
-  ): Promise<DataSourceResult<TResult>> {
-    // Use the default response parser if none was provided.
+    responseParser?: ResponseParser<TResult, any>,
+  ): Promise<TResult> {
+    const fetchResult = await this.fetch<TResult, any>(
+      path,
+      dataSourceRequest,
+      responseParser,
+    );
+    if (fetchResult.result) {
+      return fetchResult.result;
+    } else if (fetchResult.error) {
+      throw fetchResult.error;
+    } else {
+      throw new Error('Neither result nor error fetched.')
+    }
+  }
+
+  public async fetch<TResult, TError>(
+    path: string,
+    dataSourceRequest: DataSourceRequest<CO> = {},
+    responseParser?: ResponseParser<TResult, TError>,
+  ): Promise<DataSourceResult<TResult, TError>> {
+
+    // FIXME the response parser should be mandatory everywhere, but we want to allow a gradual implementation.
+    //       So for now we need to assume that TResult will be of type 'string | object'. Because there was no other
+    //       option in the current implementation, this assumption should hold true.
     if (!responseParser) {
-      responseParser = this.responseParser();
+      responseParser = this.defaultResponseParser() as ResponseParser<TResult, TError>;
     }
 
     const requestOptions = await this.toRequestOptions(dataSourceRequest);
@@ -345,7 +371,7 @@ export abstract class RESTDataSource<CO extends CacheOptions = CacheOptions> {
         // Note: we could try to get fancy and only clone if no de-duplication
         // happened (and we're "deduplicate-during-request-lifetime") but we
         // haven't quite bothered yet.
-        return this.cloneDataSourceFetchResult<TResult>(
+        return this.cloneDataSourceFetchResult(
           await thisRequestPromise,
           {
             policy,
@@ -456,17 +482,17 @@ export abstract class RESTDataSource<CO extends CacheOptions = CacheOptions> {
     return url;
   }
 
-  private async performRequest<TResult>(
+  private async performRequest<TResult, TError>(
     url: URL,
     requestOptions: RequestOptions<CO>,
-    responseParser: ResponseParser<TResult>,
-  ): Promise<Omit<DataSourceResult<TResult>, 'requestDeduplication'>> {
+    responseParser: ResponseParser<TResult, TError>,
+  ): Promise<Omit<DataSourceResult<TResult, TError>, 'requestDeduplication'>> {
     return this.trace(url, requestOptions, async () => {
       const cacheKey = this.cacheKeyFor(url, requestOptions);
       const cacheOptions = requestOptions.cacheOptions
         ? requestOptions.cacheOptions
         : this.cacheOptionsFor?.bind(this);
-      const { result, cacheWritePromise } = await this.httpCache.fetch(
+      const { result, error, cacheWritePromise } = await this.httpCache.fetch(
         url,
         requestOptions,
         {
@@ -484,6 +510,7 @@ export abstract class RESTDataSource<CO extends CacheOptions = CacheOptions> {
 
       return {
         result,
+        error,
         httpCache: {
           cacheWritePromise,
         },
@@ -556,23 +583,40 @@ export abstract class RESTDataSource<CO extends CacheOptions = CacheOptions> {
     request: FetcherRequestInit,
   ): ValueOrPromise<CO | undefined>;
 
-  protected responseParser<TResult>(
-    okResponseParser?: ResponseParser<TResult>,
-    nokResponseParser?: ResponseParser<TResult>,
-  ): ResponseParser<TResult> {
-    return async (response: FetcherResponse): Promise<TResult> => {
+  protected defaultResponseParser():  ResponseParser<string | object | undefined, GraphQLError | undefined> {
+    return this.responseParser(this.defaultResultResponseParser(), this.defaultErrorResponseParser());
+  }
+
+  protected responseParser<TResult, TError>(
+    okResponseParser?: ResponseParser<TResult, TError>,
+    nokResponseParser?: ResponseParser<TResult, TError>,
+  ): ResponseParser<TResult, TError> {
+    return async (response: FetcherResponse): Promise<{ result?: TResult, error?: TError }> => {
       if (response.ok) {
         if (okResponseParser) {
           return okResponseParser(response);
-        } else {
-          return (await this.parseBody(response)) as TResult;
         }
       } else {
         if (nokResponseParser) {
           return nokResponseParser(response);
-        } else {
-          throw await this.errorFromResponse(response);
         }
+      }
+      return {};
+    };
+  }
+
+  protected defaultResultResponseParser():  ResponseParser<string | object, undefined> {
+    return async (response: FetcherResponse) => {
+      return {
+        result: await this.parseBody(response),
+      }
+    };
+  }
+
+  protected defaultErrorResponseParser():  ResponseParser<undefined, GraphQLError> {
+    return async (response: FetcherResponse) => {
+      return {
+        error: await this.errorFromResponse(response),
       }
     };
   }
@@ -603,6 +647,7 @@ export abstract class RESTDataSource<CO extends CacheOptions = CacheOptions> {
     }
   }
 
+  // FIXME this error should be a simple object to be serialisable to and from a string in the cache.
   protected async errorFromResponse(response: FetcherResponse) {
     const codeByStatus = new Map<number, string>([
       [401, 'UNAUTHENTICATED'],
@@ -623,17 +668,18 @@ export abstract class RESTDataSource<CO extends CacheOptions = CacheOptions> {
     });
   }
 
-  private cloneDataSourceFetchResult<TResult>(
+  private cloneDataSourceFetchResult<TResult, TError>(
     dataSourceFetchResult: Omit<
-      DataSourceResult<TResult>,
+      DataSourceResult<TResult, TError>,
       'requestDeduplication'
     >,
     requestDeduplicationResult: RequestDeduplicationResult,
-  ): DataSourceResult<TResult> {
+  ): DataSourceResult<TResult, TError> {
     return {
       ...dataSourceFetchResult,
       requestDeduplication: requestDeduplicationResult,
       result: this.cloneParsedBody(dataSourceFetchResult.result),
+      error: this.cloneParsedBody(dataSourceFetchResult.error),
     };
   }
 
