@@ -59,8 +59,11 @@ export const CACHE_ENTRY_STRING_MARSHALLER: CacheEntryMarshaller<string> = {
       policy: CachePolicy.fromObject(cacheEntryJson.policy),
       parsedResponse: {
         result: cacheEntryJson.parsedResponse.result,
-        error: (cacheEntryJson.parsedResponse.error !== undefined) ? new GraphQLError(cacheEntryJson.parsedResponse.error) : undefined,
-      }
+        error:
+          cacheEntryJson.parsedResponse.error !== undefined
+            ? new GraphQLError(cacheEntryJson.parsedResponse.error)
+            : undefined,
+      },
     };
   },
   serialize(cacheEntry: CacheEntry): string {
@@ -69,8 +72,11 @@ export const CACHE_ENTRY_STRING_MARSHALLER: CacheEntryMarshaller<string> = {
       policy: cacheEntry.policy.toObject(),
       parsedResponse: {
         result: cacheEntry.parsedResponse.result,
-        error: (cacheEntry.parsedResponse.error instanceof GraphQLError) ? cacheEntry.parsedResponse.error.toJSON() : undefined,
-      }
+        error:
+          cacheEntry.parsedResponse.error instanceof GraphQLError
+            ? cacheEntry.parsedResponse.error.toJSON()
+            : undefined,
+      },
     });
   },
 };
