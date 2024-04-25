@@ -301,9 +301,9 @@ export abstract class RESTDataSource<CO extends CacheOptions = CacheOptions> {
       dataSourceRequest,
       responseParser,
     );
-    if (fetchResult.result) {
+    if (fetchResult.result !== undefined) {
       return fetchResult.result;
-    } else if (fetchResult.error) {
+    } else if (fetchResult.error !== undefined) {
       throw fetchResult.error;
     } else {
       throw new Error('Neither result nor error fetched.');
@@ -686,7 +686,8 @@ export abstract class RESTDataSource<CO extends CacheOptions = CacheOptions> {
       ...dataSourceFetchResult,
       requestDeduplication: requestDeduplicationResult,
       result: this.cloneParsedBody(dataSourceFetchResult.result),
-      error: this.cloneParsedBody(dataSourceFetchResult.error),
+      // FIXME Error cloning should be handled correctly if desired.
+      error: dataSourceFetchResult.error,
     };
   }
 

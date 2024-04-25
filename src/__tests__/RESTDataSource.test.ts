@@ -596,7 +596,9 @@ describe('RESTDataSource', () => {
         headFoo() {
           return this.head('foo', {}, async (response) => {
             return {
-              status: response.status,
+              result: {
+                status: response.status,
+              },
             };
           });
         }
@@ -863,7 +865,7 @@ describe('RESTDataSource', () => {
     });
 
     describe('deduplication', () => {
-      function expectResult(r: DataSourceResult<unknown>) {
+      function expectResult(r: DataSourceResult<unknown, unknown>) {
         return expect({
           parsedBody: r.result,
           requestDeduplication: r.requestDeduplication,
@@ -1062,9 +1064,11 @@ describe('RESTDataSource', () => {
           override baseURL = 'https://api.example.com';
 
           async getFoo(id: number) {
-            const result = await this.fetch<{ foo: object[] }>(`foo/${id}`);
-            result.result.foo.shift();
-            expect(result.result.foo.length).toEqual(1);
+            const result = await this.fetch<{ foo: object[] }, GraphQLError>(
+              `foo/${id}`,
+            );
+            result.result?.foo.shift();
+            expect(result.result?.foo.length).toEqual(1);
             return result;
           }
         })();
@@ -1555,6 +1559,7 @@ describe('RESTDataSource', () => {
               if (response.ok) {
                 throw await this.errorFromResponse(response);
               }
+              return {};
             });
           }
         })();
@@ -1927,7 +1932,9 @@ describe('RESTDataSource', () => {
             postFoo() {
               return this.fetch('foo', { method: 'POST' }, async (response) => {
                 return {
-                  headers: response.headers,
+                  result: {
+                    headers: response.headers,
+                  },
                 };
               });
             }
@@ -1941,10 +1948,10 @@ describe('RESTDataSource', () => {
             });
           const { result, httpCache } = await dataSource.postFoo();
           expect(httpCache.cacheWritePromise).toBeUndefined();
-          const { headers } = result;
-          expect(headers.get('hello')).toBe('dolly, world');
+          const headers = result?.headers;
+          expect(headers?.get('hello')).toBe('dolly, world');
           // The general Fetcher interface only lets you get the combined header values.
-          expect(headers.get('set-cookie')).toBe('first=foo, second=bar');
+          expect(headers?.get('set-cookie')).toBe('first=foo, second=bar');
 
           if (!(headers instanceof NodeFetchHeaders)) {
             fail(
@@ -1971,7 +1978,9 @@ describe('RESTDataSource', () => {
                 },
                 async (response) => {
                   return {
-                    headers: response.headers,
+                    result: {
+                      headers: response.headers,
+                    },
                   };
                 },
               );
@@ -1989,10 +1998,10 @@ describe('RESTDataSource', () => {
           {
             const { result, httpCache } = await dataSource.postFoo();
             expect(httpCache.cacheWritePromise).toBeDefined();
-            const { headers } = result;
-            expect(headers.get('hello')).toBe('dolly, world');
+            const headers = result?.headers;
+            expect(headers?.get('hello')).toBe('dolly, world');
             // The general Fetcher interface only lets you get the combined header values.
-            expect(headers.get('set-cookie')).toBe('first=foo, second=bar');
+            expect(headers?.get('set-cookie')).toBe('first=foo, second=bar');
 
             if (!(headers instanceof NodeFetchHeaders)) {
               fail(

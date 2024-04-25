@@ -12,6 +12,7 @@ import type {
   RequestOptions,
   ValueOrPromise,
 } from './RESTDataSource';
+import { GraphQLError } from 'graphql';
 
 // We want to use a couple internal properties of CachePolicy. (We could get
 // `_url` and `_status` off of the serialized CachePolicyObject, but `age()` is
@@ -52,16 +53,24 @@ export type CacheEntryMarshaller<CacheValue extends {} = string> = {
 
 export const CACHE_ENTRY_STRING_MARSHALLER: CacheEntryMarshaller<string> = {
   deserialize(serializedValue: string): CacheEntry {
-    const entryWithRawPolicy = JSON.parse(serializedValue);
+    const cacheEntryJson = JSON.parse(serializedValue);
     return {
-      ...entryWithRawPolicy,
-      policy: CachePolicy.fromObject(entryWithRawPolicy.rawPolicy),
+      ...cacheEntryJson,
+      policy: CachePolicy.fromObject(cacheEntryJson.policy),
+      parsedResponse: {
+        result: cacheEntryJson.parsedResponse.result,
+        error: (cacheEntryJson.parsedResponse.error !== undefined) ? new GraphQLError(cacheEntryJson.parsedResponse.error) : undefined,
+      }
     };
   },
   serialize(cacheEntry: CacheEntry): string {
     return JSON.stringify({
       ...cacheEntry,
-      rawPolicy: cacheEntry.policy.toObject(),
+      policy: cacheEntry.policy.toObject(),
+      parsedResponse: {
+        result: cacheEntry.parsedResponse.result,
+        error: (cacheEntry.parsedResponse.error instanceof GraphQLError) ? cacheEntry.parsedResponse.error.toJSON() : undefined,
+      }
     });
   },
 };

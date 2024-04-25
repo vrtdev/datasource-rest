@@ -4,7 +4,7 @@ import { CACHE_ENTRY_STRING_MARSHALLER, HTTPCache } from '../HTTPCache';
 import type { CacheOptions, RequestOptions } from '../RESTDataSource';
 import { nockAfterEach, nockBeforeEach } from './nockAssertions';
 import { FakeableTTLTestingCache } from './FakeableTTLTestingCache';
-import { FetcherResponse } from '@apollo/utils.fetcher';
+import type { FetcherResponse } from '@apollo/utils.fetcher';
 
 interface CustomCacheOptions extends CacheOptions {
   tags?: string[];
@@ -81,10 +81,12 @@ describe('HTTPCache', () => {
         ? await response.json()
         : '';
     return {
-      url: response.url,
-      headers,
-      status: response.status,
-      json,
+      result: {
+        url: response.url,
+        headers,
+        status: response.status,
+        json,
+      },
     };
   }
 
@@ -99,7 +101,7 @@ describe('HTTPCache', () => {
     );
     expect(cacheWritePromise).toBeUndefined();
 
-    expect(await result.json).toEqual({ name: 'Ada Lovelace' });
+    expect(await result?.json).toEqual({ name: 'Ada Lovelace' });
   });
 
   it('returns a cached response when not expired', async () => {
@@ -111,7 +113,7 @@ describe('HTTPCache', () => {
       cache,
       responseParser,
     );
-    expect(firstResult.url).toBe(adaUrl.toString());
+    expect(firstResult?.url).toBe(adaUrl.toString());
 
     await cacheWritePromise;
     jest.advanceTimersByTime(10000);
@@ -123,8 +125,8 @@ describe('HTTPCache', () => {
       responseParser,
     );
 
-    expect(result.url).toBe(adaUrl.toString());
-    expect(await result.json).toEqual({ name: 'Ada Lovelace' });
+    expect(result?.url).toBe(adaUrl.toString());
+    expect(await result?.json).toEqual({ name: 'Ada Lovelace' });
     // FIXME check through cache metrics
     //expect(result.headers['age']).toEqual('10');
   });
@@ -151,7 +153,7 @@ describe('HTTPCache', () => {
       responseParser,
     );
 
-    expect(await result.json).toEqual({ name: 'Alan Turing' });
+    expect(await result?.json).toEqual({ name: 'Alan Turing' });
     // FIXME check through cache metrics
     //expect(result.headers['age']).toBeNull();
   });
@@ -187,7 +189,7 @@ describe('HTTPCache', () => {
         responseParser,
       );
 
-      expect(await result.json).toEqual({ name: 'Ada Lovelace' });
+      expect(await result?.json).toEqual({ name: 'Ada Lovelace' });
       // FIXME check through cache metrics
       //expect(result.headers['age']).toEqual('10');
     });
@@ -225,7 +227,7 @@ describe('HTTPCache', () => {
         responseParser,
       );
 
-      expect(await result.json).toEqual({ name: 'Alan Turing' });
+      expect(await result?.json).toEqual({ name: 'Alan Turing' });
       // FIXME check through cache metrics
       //expect(result.headers['age']).toBeNull();
     });
@@ -259,7 +261,7 @@ describe('HTTPCache', () => {
         responseParser,
       );
 
-      expect(await result.json).toEqual({ name: 'Alan Turing' });
+      expect(await result?.json).toEqual({ name: 'Alan Turing' });
       // FIXME check through cache metrics
       //expect(result.headers['age']).toBeNull();
     });
@@ -315,7 +317,7 @@ describe('HTTPCache', () => {
         responseParser,
       );
 
-      expect(await result.json).toEqual({ name: 'Ada Lovelace' });
+      expect(await result?.json).toEqual({ name: 'Ada Lovelace' });
       // FIXME check through cache metrics
       //expect(result.headers['age']).toEqual('10');
     });
@@ -352,7 +354,7 @@ describe('HTTPCache', () => {
         responseParser,
       );
 
-      expect(await result.json).toEqual({ name: 'Ada Lovelace' });
+      expect(await result?.json).toEqual({ name: 'Ada Lovelace' });
       // FIXME check through cache metrics
       //expect(result.headers['age']).toEqual('10');
     });
@@ -398,7 +400,7 @@ describe('HTTPCache', () => {
       responseParser,
     );
 
-    expect(await result.json).toEqual({ name: 'Ada Lovelace' });
+    expect(await result?.json).toEqual({ name: 'Ada Lovelace' });
   });
 
   it('does not store a response to a non-GET/HEAD request', async () => {
@@ -489,7 +491,7 @@ describe('HTTPCache', () => {
       responseParser,
     );
 
-    expect(await result.json).toEqual({ name: 'Ada Lovelace' });
+    expect(await result?.json).toEqual({ name: 'Ada Lovelace' });
   });
 
   it(`does not return a cached response when vary header fields don't match`, async () => {
@@ -521,7 +523,7 @@ describe('HTTPCache', () => {
       responseParser,
     );
 
-    expect(await result.json).toEqual({ name: 'Alan Turing' });
+    expect(await result?.json).toEqual({ name: 'Alan Turing' });
   });
 
   it('sets the TTL as max-age when the response does not contain revalidation headers', async () => {
@@ -612,8 +614,8 @@ describe('HTTPCache', () => {
       cache,
       responseParser,
     );
-    expect(result0.status).toEqual(200);
-    expect(await result0.json).toEqual({ name: 'Ada Lovelace' });
+    expect(result0?.status).toEqual(200);
+    expect(await result0?.json).toEqual({ name: 'Ada Lovelace' });
     // FIXME check through cache metrics
     //expect(result0.headers['age']).toBeNull();
 
@@ -627,8 +629,8 @@ describe('HTTPCache', () => {
       responseParser,
     );
     expect(cwp2).toBeUndefined();
-    expect(result1.status).toEqual(200);
-    expect(await result1.json).toEqual({ name: 'Ada Lovelace' });
+    expect(result1?.status).toEqual(200);
+    expect(await result1?.json).toEqual({ name: 'Ada Lovelace' });
     // FIXME check through cache metrics
     //expect(result1.headers['age']).toEqual('10');
 
@@ -648,8 +650,8 @@ describe('HTTPCache', () => {
       cache,
       responseParser,
     );
-    expect(result.status).toEqual(200);
-    expect(await result.json).toEqual({ name: 'Ada Lovelace' });
+    expect(result?.status).toEqual(200);
+    expect(await result?.json).toEqual({ name: 'Ada Lovelace' });
     // FIXME check through cache metrics
     //expect(result.headers['age']).toEqual('0');
 
@@ -664,8 +666,8 @@ describe('HTTPCache', () => {
     );
 
     expect(cwp4).toBeUndefined();
-    expect(result2.status).toEqual(200);
-    expect(await result2.json).toEqual({ name: 'Ada Lovelace' });
+    expect(result2?.status).toEqual(200);
+    expect(await result2?.json).toEqual({ name: 'Ada Lovelace' });
     // FIXME check through cache metrics
     //expect(result2.headers['age']).toEqual('10');
   });
@@ -682,8 +684,8 @@ describe('HTTPCache', () => {
       cache,
       responseParser,
     );
-    expect(result0.status).toEqual(200);
-    expect(await result0.json).toEqual({ name: 'Ada Lovelace' });
+    expect(result0?.status).toEqual(200);
+    expect(await result0?.json).toEqual({ name: 'Ada Lovelace' });
     // FIXME check through cache metrics
     //expect(result0.headers['age']).toBeNull();
 
@@ -697,8 +699,8 @@ describe('HTTPCache', () => {
       responseParser,
     );
     expect(cwp2).toBeUndefined();
-    expect(result1.status).toEqual(200);
-    expect(await result1.json).toEqual({ name: 'Ada Lovelace' });
+    expect(result1?.status).toEqual(200);
+    expect(await result1?.json).toEqual({ name: 'Ada Lovelace' });
     // FIXME check through cache metrics
     //expect(result1.headers['age']).toEqual('10');
 
@@ -719,8 +721,8 @@ describe('HTTPCache', () => {
       responseParser,
     );
 
-    expect(result.status).toEqual(200);
-    expect(await result.json).toEqual({ name: 'Ada Lovelace' });
+    expect(result?.status).toEqual(200);
+    expect(await result?.json).toEqual({ name: 'Ada Lovelace' });
     // FIXME check through cache metrics
     //expect(result.headers['age']).toEqual('0');
 
@@ -735,8 +737,8 @@ describe('HTTPCache', () => {
     );
 
     expect(cwp4).toBeUndefined();
-    expect(result2.status).toEqual(200);
-    expect(await result2.json).toEqual({ name: 'Ada Lovelace' });
+    expect(result2?.status).toEqual(200);
+    expect(await result2?.json).toEqual({ name: 'Ada Lovelace' });
     // FIXME check through cache metrics
     //expect(result2.headers['age']).toEqual('10');
   });
@@ -773,8 +775,8 @@ describe('HTTPCache', () => {
       );
 
       expect(cacheWritePromise).toBeDefined();
-      expect(result.status).toEqual(200);
-      expect(await result.json).toEqual({ name: 'Alan Turing' });
+      expect(result?.status).toEqual(200);
+      expect(await result?.json).toEqual({ name: 'Alan Turing' });
 
       await cacheWritePromise;
     }
@@ -790,8 +792,8 @@ describe('HTTPCache', () => {
       );
 
       expect(cacheWritePromise).toBeUndefined();
-      expect(result2.status).toEqual(200);
-      expect(await result2.json).toEqual({ name: 'Alan Turing' });
+      expect(result2?.status).toEqual(200);
+      expect(await result2?.json).toEqual({ name: 'Alan Turing' });
       // FIXME check through cache metrics
       //expect(result2.headers['age']).toEqual('10');
     }
@@ -815,7 +817,7 @@ describe('HTTPCache', () => {
     );
 
     expect(cacheWritePromise).toBeUndefined();
-    expect(await result.json).toEqual({ name: 'Ada Lovelace' });
+    expect(await result?.json).toEqual({ name: 'Ada Lovelace' });
   });
 
   describe('HEAD requests', () => {
