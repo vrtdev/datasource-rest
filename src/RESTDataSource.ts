@@ -568,7 +568,7 @@ export abstract class RESTDataSource<CO extends CacheOptions = CacheOptions> {
   // you don't take the header into account in the cache key.
   protected cacheKeyFor(url: URL, request: RequestOptions<CO>): string {
     if (!request.cacheKey) {
-      request.cacheKey = `${request.method} ${url}`
+      request.cacheKey = `${request.method} ${url}`;
     }
     return request.cacheKey;
   }
