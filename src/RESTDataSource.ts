@@ -551,8 +551,16 @@ export abstract class RESTDataSource<CO extends CacheOptions = CacheOptions> {
         // don't have to invalidate the key with this HTTP method because we
         // never write it.)
         invalidateDeduplicationKeys: [
-          this.cacheKeyFor(url, { ...request, method: 'GET' }),
-          this.cacheKeyFor(url, { ...request, method: 'HEAD' }),
+          this.cacheKeyFor(url, {
+            ...request,
+            cacheKey: undefined,
+            method: 'GET',
+          }),
+          this.cacheKeyFor(url, {
+            ...request,
+            cacheKey: undefined,
+            method: 'HEAD',
+          }),
         ],
       };
     }

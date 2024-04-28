@@ -317,6 +317,7 @@ describe('RESTDataSource', () => {
         body: '{"foo":"bar"}',
         method: 'POST',
         params: new URLSearchParams(),
+        cacheKey: 'POST https://api.example.com/foo',
       });
       expect(data).toEqual({ foo: 'bar' });
     });
@@ -354,6 +355,7 @@ describe('RESTDataSource', () => {
         body: '{"foo":"bar"}',
         method: 'POST',
         params: new URLSearchParams(),
+        cacheKey: 'POST https://api.example.com/foo',
       });
       expect(data).toEqual({ foo: 'bar' });
     });
@@ -384,6 +386,7 @@ describe('RESTDataSource', () => {
         body: '{"foo":"bar"}',
         method: 'POST',
         params: new URLSearchParams(),
+        cacheKey: 'POST https://api.example.com/foo',
       });
       expect(data).toEqual({ foo: 'bar' });
     });
@@ -414,6 +417,7 @@ describe('RESTDataSource', () => {
         body: '{"foo":"bar"}',
         method: 'POST',
         params: new URLSearchParams(),
+        cacheKey: 'POST https://api.example.com/foo',
       });
       expect(data).toEqual({ foo: 'bar' });
     });
