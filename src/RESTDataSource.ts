@@ -403,6 +403,7 @@ export abstract class RESTDataSource<CO extends CacheOptions = CacheOptions> {
 
     let body;
     // FIXME this feels weird and very limiting. What about all other possible serialisations..
+    //       Also, why do this before even checking the cache. This could be a waste of time.
     if (this.shouldJSONSerializeBody(dataSourceRequest.body)) {
       body = JSON.stringify(dataSourceRequest.body);
       // If Content-Type header has not been previously set, set to application/json
@@ -531,14 +532,13 @@ export abstract class RESTDataSource<CO extends CacheOptions = CacheOptions> {
     url: URL,
     request: RequestOptions<CO>,
   ): RequestDeduplicationPolicy {
-    const method = request.method ?? 'GET';
     // Start with the cache key that is used for the shared header-sensitive
     // cache. Note that its default implementation does not include the HTTP
     // method, so if a subclass overrides this and allows non-GET/HEADs to be
     // de-duplicated it will be important for it to include (at least!) the
     // method in the deduplication key, so we're explicitly adding GET/HEAD here.
     const cacheKey = this.cacheKeyFor(url, request);
-    if (['GET', 'HEAD'].includes(method)) {
+    if (['GET', 'HEAD'].includes(request.method)) {
       return {
         policy: 'deduplicate-during-request-lifetime',
         deduplicationKey: cacheKey,
@@ -567,7 +567,10 @@ export abstract class RESTDataSource<CO extends CacheOptions = CacheOptions> {
   // responses can overwrite old ones with different Vary-ed header fields if
   // you don't take the header into account in the cache key.
   protected cacheKeyFor(url: URL, request: RequestOptions<CO>): string {
-    return request.cacheKey ?? `${request.method} ${url}`;
+    if (!request.cacheKey) {
+      request.cacheKey = `${request.method} ${url}`
+    }
+    return request.cacheKey;
   }
 
   protected cacheOptionsFor?(
