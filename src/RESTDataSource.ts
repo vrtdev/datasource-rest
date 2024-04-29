@@ -127,6 +127,7 @@ export interface CacheOptions {
    * cached.
    */
   ttl?: number;
+  policySatisfiedWhenFresh?: boolean;
 }
 
 const NODE_ENV = process.env.NODE_ENV;
