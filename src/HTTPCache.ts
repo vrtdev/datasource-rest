@@ -193,7 +193,9 @@ export class HTTPCache<
 
     if (
       (ttlOverride && policy.age() < ttlOverride) ||
-      (!ttlOverride && policy.age() <= policy.timeToLive() && !!policySatisfiedWhenFresh) ||
+      (!ttlOverride &&
+        policy.age() <= policy.timeToLive() &&
+        !!policySatisfiedWhenFresh) ||
       (!ttlOverride &&
         policy.satisfiesWithoutRevalidation(
           policyRequestFrom(urlString, requestOpts),
