@@ -185,8 +185,15 @@ export class HTTPCache<
     // that two requests should be treated as the same even if the URL differs).
     policy._url = undefined;
 
+    //
+    const policySatisfiedWhenFresh =
+      typeof cache?.cacheOptions === 'function'
+        ? false
+        : cache?.cacheOptions?.policySatisfiedWhenFresh;
+
     if (
       (ttlOverride && policy.age() < ttlOverride) ||
+      (!ttlOverride && policy.age() <= policy.timeToLive() && !!policySatisfiedWhenFresh) ||
       (!ttlOverride &&
         policy.satisfiesWithoutRevalidation(
           policyRequestFrom(urlString, requestOpts),
